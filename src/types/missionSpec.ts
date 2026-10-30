@@ -214,3 +214,91 @@ export const M01_CARGO_CRATE_SPECS: CargoCrateSpec[] = [
     accentHex: '#22d3ee',
   },
 ];
+
+// ============================================================================
+// UNIVERSAL MISSION SPECIFICATION FRAMEWORK (M01–M15 & B01–B03)
+// ============================================================================
+
+export interface MissionTargetItemSpec {
+  id: string;
+  code: string;
+  titleVi: string;
+  rawLabelText: string;
+  displayedSymbol: string;
+  rawValueText: string;
+  readoutVi: string;
+  numericValue: number | null;
+  unit: string;
+  isValidTarget: boolean;
+  distractorReasonVi?: string;
+  scientificNoteVi: string;
+  colorHex: number;
+  accentHex: string;
+}
+
+export interface MissionTargetRuntimeState {
+  spec: MissionTargetItemSpec;
+  scanned: boolean;
+  taggedWithPulse: boolean;
+  activatedOrLoaded: boolean;
+  rejectedAttemptCount: number;
+  worldPosition: { x: number; y: number; z: number };
+}
+
+export interface GenericMissionRunEvidence {
+  runId: string;
+  missionId: MissionId;
+  difficulty: DifficultyLayer;
+  performanceTier: PerformanceTier;
+  checkpointsReached: string[];
+  objectiveFlags: Record<string, boolean>;
+  interactionCount: number;
+  scanCount: number;
+  pulseTagCount: number;
+  wrongAttempts: number;
+  retries: number;
+  collectedIds: string[];
+  routeChoices: string[];
+  missionTimeMs: number;
+  drivingScore: number;
+  knowledgeScore?: number;
+  missionPerformanceScore: number;
+  interactionEvidence: Record<string, unknown>;
+}
+
+export interface UniversalMissionHudSnapshot {
+  active: boolean;
+  missionId: MissionId;
+  missionTitleVi: string;
+  missionPhase: string;
+  cameraMode: CameraViewMode;
+  difficulty: DifficultyLayer;
+  performanceTier: PerformanceTier;
+  currentFps: number;
+  checkpointId: string;
+  objectiveTextVi: string;
+  orbitMessageVi: string;
+  orbitSpeaker: string;
+  feedbackTone: 'info' | 'success' | 'warning' | 'error';
+  inInteractiveZone: boolean;
+  currentProgressValue: number;
+  targetProgressValue: number;
+  progressUnit: string;
+  completedItemsCount: number;
+  requiredItemsCount: number;
+  wrongAttempts: number;
+  maxWrongAttempts: number;
+  remainingTimeSeconds: number;
+  shortcutUnlocked: boolean;
+  holoCrateCollected: boolean;
+  exitGateOpen: boolean;
+  aimedItem: MissionTargetRuntimeState | null;
+  allItems: MissionTargetRuntimeState[];
+  reticleX: number;
+  reticleY: number;
+  tieredHintVi: string | null;
+  bossPhase?: number;
+  bossTotalPhases?: number;
+  bossStabilityPct?: number;
+  evidence: GenericMissionRunEvidence;
+}

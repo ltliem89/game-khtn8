@@ -23,11 +23,13 @@ import {
 } from './proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
 import { M01MassVaultController } from '../missions/m01MassVault';
+import { MissionDispatcher } from '../missions/missionDispatcher';
 import {
   CameraViewMode,
   DifficultyLayer,
   M01HudSnapshot,
   PerformanceTier,
+  UniversalMissionHudSnapshot,
 } from '../../types/missionSpec';
 
 // Pre-allocated scratch math helpers (Zero GC in render loop)
@@ -77,6 +79,8 @@ export interface WorldCallbacks {
   ) => void;
   onM01BonusCoins?: (coins: number, messageVi: string) => void;
   onM01HudUpdate?: (snapshot: M01HudSnapshot) => void;
+  onUniversalBonusCoins?: (coins: number, messageVi: string) => void;
+  onUniversalHudUpdate?: (snapshot: UniversalMissionHudSnapshot) => void;
   onTelemetryUpdate: (
     telemetry: VehicleTelemetry,
     minimapPoints: { x: number; z: number }[],
@@ -103,6 +107,7 @@ export class World3DEngine {
   private collectiblesGroup = new THREE.Group();
   private jetbotRig: JetBotRig;
   public m01Vault: M01MassVaultController;
+  public missionDispatcher: MissionDispatcher;
   private cameraMode: CameraViewMode = 'chase';
 
   private splineCurve: THREE.CatmullRomCurve3 | null = null;
@@ -208,7 +213,7 @@ export class World3DEngine {
     );
     this.scene.add(this.jetbotRig.group);
 
-    // 4. Create M01 — THE MASS VAULT 3D Controller
+    // 4. Create M01 — THE MASS VAULT 3D Controller & Universal Mission Dispatcher
     this.m01Vault = new M01MassVaultController(
       this.isSoftwareGl,
       this.maxAnisotropy
@@ -217,6 +222,16 @@ export class World3DEngine {
       this.triggerImpactFeel(hitstopSec, shake);
     });
     this.scene.add(this.m01Vault.rootGroup);
+
+    this.missionDispatcher = new MissionDispatcher(
+      this.scene,
+      this.isSoftwareGl,
+      this.maxAnisotropy,
+      this.m01Vault
+    );
+    this.missionDispatcher.setImpactFeelCallback((hitstopSec, shake) => {
+      this.triggerImpactFeel(hitstopSec, shake);
+    });
 
     window.addEventListener('resize', this.handleResize);
     this.startLoop();
@@ -245,6 +260,7 @@ export class World3DEngine {
       this.cameraMode = 'chase';
     }
     this.m01Vault.setCameraMode(this.cameraMode);
+    this.missionDispatcher.setCameraMode(this.cameraMode);
     soundEngine.playStepClick();
   }
 
@@ -253,6 +269,7 @@ export class World3DEngine {
     tier: PerformanceTier
   ) {
     this.m01Vault.setDifficultyAndTier(difficulty, tier);
+    this.missionDispatcher.setDifficultyAndTier(difficulty, tier);
     if (!this.isSoftwareGl) {
       if (tier === 'PERFORMANCE') {
         this.renderer.setPixelRatio(1);
@@ -535,6 +552,7 @@ export class World3DEngine {
     this.updateStageVisibility(mapConfig);
     this.updateJetBotAppearance(jetbotConfig);
     this.updateStationUnlockVisuals(stationProgress, this.activeStationIndex);
+    this.syncActiveStationMission();
 
     // Position JetBot at start of track if at index 0
     if (this.sampledNodes.length > 10) {
@@ -876,11 +894,31 @@ export class World3DEngine {
     this.jetbotRig.sensorCone.visible = jetbotConfig.sensorOverlayVisible;
   }
 
+  public syncActiveStationMission() {
+    if (this.stationAnchors.length === 0) return;
+    const clamped = Math.min(
+      this.activeStationIndex,
+      this.stationAnchors.length - 1
+    );
+    const anchor = this.stationAnchors[clamped];
+    if (!anchor) return;
+    const missionId = this.missionDispatcher.mapStationToMissionId(
+      anchor.station.station_id,
+      clamped
+    );
+    this.missionDispatcher.activateMission(
+      missionId,
+      anchor.position,
+      anchor.tangent
+    );
+  }
+
   public updateStationUnlockVisuals(
     stationProgress: Record<string, StationProgressState>,
     activeIndex: number
   ) {
     this.activeStationIndex = activeIndex;
+    this.syncActiveStationMission();
     this.stationAnchors.forEach((anchor, idx) => {
       const stProg = stationProgress[anchor.station.station_id];
       const isCompleted = stProg?.completed ?? false;
@@ -912,6 +950,7 @@ export class World3DEngine {
     this.currentPhase = phase;
     this.activeStationIndex = activeStationIndex;
     this.stationBraking = phase === 'station_brake';
+    this.syncActiveStationMission();
 
     const shouldLockInput = phase !== 'driving';
     this.inputManager.setLocked(shouldLockInput);
@@ -1075,6 +1114,31 @@ export class World3DEngine {
           this.m01Vault.getHudSnapshot(this.currentDrivingScore)
         );
       }
+
+      // Universal Mission Dispatcher for all active missions & bosses
+      this.missionDispatcher.update(
+        dt,
+        elapsed,
+        this.physics.position,
+        this.camera,
+        input.reticleX,
+        input.reticleY,
+        input.justPressedInteract,
+        input.justPressedPulse,
+        true,
+        (penaltyPts) => {
+          this.callbacks.onDrivingPenaltyTick(penaltyPts);
+        },
+        (bonusCoins, msgVi) => {
+          this.callbacks.onUniversalBonusCoins?.(bonusCoins, msgVi);
+        }
+      );
+      const universalSnap = this.missionDispatcher.getHudSnapshot(
+        this.currentDrivingScore
+      );
+      if (universalSnap) {
+        this.callbacks.onUniversalHudUpdate?.(universalSnap);
+      }
     }
 
     if (
@@ -1118,11 +1182,12 @@ export class World3DEngine {
       }
 
       if (stepRes.reachedStationTrigger && this.currentPhase === 'driving') {
-        // For Station 0 (M01 — THE MASS VAULT), require the 15.0 kg Exit Gate to be unlocked first!
-        if (
-          this.activeStationIndex === 0 &&
-          !this.m01Vault.isExitGateUnlocked()
-        ) {
+        const isGateUnlocked =
+          this.activeStationIndex === 0
+            ? this.m01Vault.isExitGateUnlocked()
+            : this.missionDispatcher.isExitGateUnlocked();
+
+        if (!isGateUnlocked) {
           this.physics.forceStop();
           // Nudge rover slightly back into the Scanner Bay in front of the closed Exit Gate
           this.physics.position.addScaledVector(activeAnchor.tangent, -3.5);
@@ -1373,10 +1438,16 @@ export class World3DEngine {
             _scratchVecA.z
           );
         } else {
+          this.missionDispatcher.getScannerBayFocusPosition(_scratchVecA);
+          const uSnap = this.missionDispatcher.getHudSnapshot(
+            this.currentDrivingScore
+          );
+          const rx = uSnap?.reticleX ?? 0;
+          const ry = uSnap?.reticleY ?? 0;
           _camLookAt.set(
-            this.physics.position.x + sinH * 12.0,
-            1.4,
-            this.physics.position.z + cosH * 12.0
+            _scratchVecA.x + rx * 4.5,
+            _scratchVecA.y + ry * 2.2,
+            _scratchVecA.z
           );
         }
       } else {
@@ -1438,6 +1509,7 @@ export class World3DEngine {
     clearTimeout(this.frameId);
     window.removeEventListener('resize', this.handleResize);
     this.m01Vault.dispose();
+    this.missionDispatcher.dispose();
     this.renderer.dispose();
   }
 }

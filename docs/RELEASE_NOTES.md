@@ -1,0 +1,33 @@
+# Release Notes — JETBOT-SCI8
+
+## v1.2.0-full-campaign (2026-10-30) — Full Autonomous Campaign Delivery
+- **Completed All 15 Learning Missions (M01–M15)**:
+  - `M01_MASS`: The Mass Vault — Cargo Scan & NOVA-8 Precision Scale.
+  - `M02_VOLUME`: Volume Maze — Fluid Displacement & Glass Cylinders ($V_2 - V_1$).
+  - `M03_DENSITY`: Density Hunt — Multi-material Scanner ($D = m/V$).
+  - `M04_SURFACE_PRESSURE`: Surface Pressure — Tire Pressure & Grip Racing ($p = F/S$).
+  - `M05_LIQUID_PRESSURE`: Fluid Pressure — Depth Floodgates & Dam Wall ($p = d \cdot h$).
+  - `M06_ATMOSPHERIC_PRESSURE`: Atmospheric Peak — Torricelli Airlock ($p_0 \approx 103360\,\text{Pa}$).
+  - `M07_ARCHIMEDES`: Archimedes Mire — Dynamometer & Buoyancy Balance ($F_A = d \cdot V$).
+  - `M08_MOMENT`: Torque Crane Rig — Rotational Lever Arm ($M = F \cdot d$).
+  - `M09_LEVER`: Lever Labyrinth — Fulcrum Alignment ($OO_1 > OO_2 \rightarrow F_1 < P$).
+  - `M10_CURRENT`: Current Runner — Series Circuit Wiring ($I$, Ammeter in series).
+  - `M11_VOLTAGE`: Voltage Gate — Substation Calibration ($U$, Voltmeter parallel).
+  - `M12_THERMAL_ENERGY`: Thermal Survivor — Geothermal Heat & Internal Energy.
+  - `M13_JOULEMETER`: Joule Lab — Calorimeter & Joulemeter Probes ($Q$ in $\text{J}, \text{kJ}$).
+  - `M14_HEAT_TRANSFER`: Heatflow Run — Conduction, Convection & Radiation.
+  - `M15_THERMAL_EXPANSION`: Expansion Bridge — Solid, Liquid & Gas Expansion Joints.
+- **Completed All 3 Synthesis Boss Encounters (B01–B03)**:
+  - `B01_CARGO_CATASTROPHE`: 3-Phase synthesis for M01–M05 (Cargo balance, floodgate relief, crane stabilization).
+  - `B02_ABYSS_REACTOR`: 4-Phase synthesis for M06–M10 (Skylock $p_0$, Archimedes raft $F_A$, lever release, current restart).
+  - `B03_CORE_MELTDOWN`: 5-Phase Grand Finale for M11–M15 (Voltage calibration, Joule quench, Heat routing, Expansion lockdown, NOVA-8 Core 100% Online).
+- **Architecture & System Harmonization**:
+  - `IMissionController`: Standardized interface ensuring identical lifecycle and zero-GC allocations across all controllers.
+  - `MissionDispatcher`: Dynamic station-to-mission resolution, controller caching, and seamless scene switching.
+  - `UniversalMissionHudOverlay`: Full-featured responsive science HUD supporting mobile, tablet, and desktop controls with aim reticle lock, collapsible dock, and Lyria/Synth music controls.
+  - `M01MassVault` Preservation: M01 preserved 100% via `M01MissionAdapter` with backwards-compatible dual-HUD routing in `App.tsx` and `world3D.ts`.
+- **Verification & Compliance**:
+  - `tsc --noEmit`: 0 errors.
+  - `vite build`: Production bundle built in 571ms.
+  - MathType / LaTeX standard syntax adhered across all formulas ($...$ and $$...$$).
+  - Non-violent science-first interaction model strictly maintained.

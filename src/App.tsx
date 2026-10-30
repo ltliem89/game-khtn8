@@ -33,10 +33,12 @@ import { ElementsCompoundsModal } from './ui/chemistry/ElementsCompoundsModal';
 import { KnowledgeMapModal } from './ui/knowledge/KnowledgeMapModal';
 import { MissionBriefingOverlay } from './ui/missions/MissionBriefingOverlay';
 import { FpsScannerHudOverlay } from './ui/missions/FpsScannerHudOverlay';
+import { UniversalMissionHudOverlay } from './ui/missions/UniversalMissionHudOverlay';
 import {
   DifficultyLayer,
   M01HudSnapshot,
   PerformanceTier,
+  UniversalMissionHudSnapshot,
 } from './types/missionSpec';
 import { Play, RotateCcw, Star, Trophy } from 'lucide-react';
 
@@ -65,6 +67,7 @@ export default function App() {
   const toastTimerRef = useRef<number | null>(null);
   const [isMuted, setIsMuted] = useState(() => soundEngine.isMuted());
   const [m01Hud, setM01Hud] = useState<M01HudSnapshot | null>(null);
+  const [universalHud, setUniversalHud] = useState<UniversalMissionHudSnapshot | null>(null);
 
   // Active quiz questions & last attempt record
   const [activeQuizQuestions, setActiveQuizQuestions] = useState<QuestionRecord[]>([]);
@@ -272,6 +275,23 @@ export default function App() {
         },
         onM01HudUpdate: (snapshot) => {
           setM01Hud(snapshot);
+        },
+        onUniversalBonusCoins: (coins, messageVi) => {
+          setProgress((prev) => ({
+            ...prev,
+            wallet: {
+              ...prev.wallet,
+              coins: prev.wallet.coins + coins,
+            },
+          }));
+          setPickupToast(`+${coins} Xu: ${messageVi}`);
+          if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+          toastTimerRef.current = window.setTimeout(() => {
+            setPickupToast(null);
+          }, 3600);
+        },
+        onUniversalHudUpdate: (snapshot) => {
+          setUniversalHud(snapshot);
         },
         onTelemetryUpdate: (tel, mPath, sCoords) => {
           setTelemetry(tel);
@@ -965,6 +985,45 @@ export default function App() {
               onProceedToQuizNow={() => {
                 soundEngine.playStationArrive();
                 openStationQuizForIndex(0);
+              }}
+            />
+          )}
+
+          {/* M02-M15 & B01-B03 Universal Mission HUD Overlay */}
+          {progress.active_station_index > 0 && universalHud && (
+            <UniversalMissionHudOverlay
+              snapshot={universalHud}
+              onSwitchCameraMode={(mode) =>
+                worldRef.current?.cycleCameraMode(mode)
+              }
+              onTriggerSciencePulse={() =>
+                worldRef.current?.missionDispatcher
+                  .getActiveController()
+                  ?.triggerSciencePulseOnAimed()
+              }
+              onTriggerInteract={() =>
+                worldRef.current?.missionDispatcher
+                  .getActiveController()
+                  ?.interactWithAimed((coins, msgVi) => {
+                    setProgress((prev) => ({
+                      ...prev,
+                      wallet: {
+                        ...prev.wallet,
+                        coins: prev.wallet.coins + coins,
+                        totalCoinsEarned: prev.wallet.totalCoinsEarned + coins,
+                      },
+                    }));
+                    setPickupToast(msgVi);
+                  })
+              }
+              onSelectTargetById={(targetId) =>
+                worldRef.current?.missionDispatcher
+                  .getActiveController()
+                  ?.selectTargetById(targetId)
+              }
+              onProceedToQuizNow={() => {
+                soundEngine.playStationArrive();
+                openStationQuizForIndex(progress.active_station_index);
               }}
             />
           )}
