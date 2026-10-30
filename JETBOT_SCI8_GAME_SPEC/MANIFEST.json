@@ -1,0 +1,142 @@
+{
+  "package": "JETBOT-SCI8_GAME_SPEC",
+  "version": "1.0.0",
+  "markdown_files": 27,
+  "files": [
+    {
+      "path": "00_CONTROL/GOOGLE_AI_STUDIO_START_PROMPT.md",
+      "size_bytes": 1752,
+      "sha256": "f74f56fcc7a941b3f01f2f616eb7c193c8698658ac4aa9e8a5d1d1882bf81b89"
+    },
+    {
+      "path": "00_CONTROL/MASTER_CONTROL_PROMPT.md",
+      "size_bytes": 15489,
+      "sha256": "6c862f088597731d2f134105196547620facf75227243f840d4b65a2b5a75b05"
+    },
+    {
+      "path": "01_DESIGN_BIBLE/GAME_DESIGN_BIBLE.md",
+      "size_bytes": 10065,
+      "sha256": "4e21ce9b49e3c88adb991982b8ba90061956f9286738e41616ee1aa2cf09e0ec"
+    },
+    {
+      "path": "02_TECHNICAL/TECHNICAL_ARCHITECTURE.md",
+      "size_bytes": 10098,
+      "sha256": "6c6ac3ad9bb57158fc8876bf14558f1b7a493307586258f084d3a09441d607d9"
+    },
+    {
+      "path": "03_CURRICULUM/CURRICULUM_AND_ASSESSMENT.md",
+      "size_bytes": 7450,
+      "sha256": "54befaab1265efa12319f9d3298ef7ec2fb085aebb8b7294773092291774445c"
+    },
+    {
+      "path": "04_ASSETS/ART_AUDIO_UI_BIBLE.md",
+      "size_bytes": 7680,
+      "sha256": "7734f848c77057741d6a0f7db64739bf935a29f93bce490de7feff6bff6746f8"
+    },
+    {
+      "path": "05_ACCEPTANCE/QA_ACCEPTANCE_DELIVERY.md",
+      "size_bytes": 4848,
+      "sha256": "82aae0ae83862c743e9b1583d29cef5fbc928d19bf3bb0a8b1c7f3ce3e3bfab6"
+    },
+    {
+      "path": "06_MISSIONS/WORLD_01_MATERIAL_FACTORY/M01_MASS.md",
+      "size_bytes": 10936,
+      "sha256": "87d0d2ef1988849a212e507f13a30c66f52f146ba7f9111bb8d399ac450e9f16"
+    },
+    {
+      "path": "06_MISSIONS/WORLD_01_MATERIAL_FACTORY/M02_VOLUME.md",
+      "size_bytes": 10804,
+      "sha256": "85f13f0e70312e5e424a980320d0bf24bc50cc18f71d2b08f32476d0f05582c6"
+    },
+    {
+      "path": "06_MISSIONS/WORLD_01_MATERIAL_FACTORY/M03_DENSITY.md",
+      "size_bytes": 10728,
+      "sha256": "1f806aa6cd0f7d7781ac228a6d40174bf062143b932a5d7c0421969fbe5ec640"
+    },
+    {
+      "path": "06_MISSIONS/WORLD_02_PRESSURE_CANYON/M04_SURFACE_PRESSURE.md",
+      "size_bytes": 10736,
+      "sha256": "70c16364a98db6d666a43e5a1d81a45af2d72abdcb7ee0dbf8e5d68baad1415b"
+    },
+    {
+      "path": "06_MISSIONS/WORLD_02_PRESSURE_CANYON/M05_LIQUID_PRESSURE.md",
+      "size_bytes": 10809,
+      "sha256": "41309f89652b97773bf9102ec1abaa84b2011d0a24e95b2d0fd2a30f52607654"
+    },
+    {
+      "path": "06_MISSIONS/WORLD_02_PRESSURE_CANYON/M06_ATMOSPHERIC_PRESSURE.md",
+      "size_bytes": 10767,
+      "sha256": "4361d41052df8be7a959c3d4fe6b486cc2af5d0904ef9f30fd181d10ec5eba50"
+    },
+    {
+      "path": "06_MISSIONS/WORLD_02_PRESSURE_CANYON/M07_ARCHIMEDES.md",
+      "size_bytes": 10685,
+      "sha256": "087ce6bd689777a07d8b8f59444a2ecb7a2743aad1676cbd3a10e24409c20311"
+    },
+    {
+      "path": "06_MISSIONS/WORLD_03_MECHANICAL_FRONTIER/M08_MOMENT.md",
+      "size_bytes": 10651,
+      "sha256": "9eecfb28d98f2d35b038e1dd832fad358359d21c024afd915ceabc50c6e019b8"
+    },
+    {
+      "path": "06_MISSIONS/WORLD_03_MECHANICAL_FRONTIER/M09_LEVER.md",
+      "size_bytes": 10584,
+      "sha256": "6bc5c46b647291905b55779b40d74d57d37fbe90b79d05297f529d1e1c23227c"
+    },
+    {
+      "path": "06_MISSIONS/WORLD_04_ELECTRIC_CITY/M10_CURRENT.md",
+      "size_bytes": 10808,
+      "sha256": "893bdea51764ec9796883e59db1b0bf7a39a6ec4d1f790dd93fac531f1663d95"
+    },
+    {
+      "path": "06_MISSIONS/WORLD_04_ELECTRIC_CITY/M11_VOLTAGE.md",
+      "size_bytes": 10609,
+      "sha256": "8202f43001d59350f9650325bf1a65aac6358d65de4e0996463532b9218f980a"
+    },
+    {
+      "path": "06_MISSIONS/WORLD_05_THERMAL_VALLEY/M12_THERMAL_ENERGY.md",
+      "size_bytes": 10773,
+      "sha256": "0a3334e4eb191639fcb4fa4b2dfd110f3a84af764764ce083b72fec8262b1333"
+    },
+    {
+      "path": "06_MISSIONS/WORLD_05_THERMAL_VALLEY/M13_JOULEMETER.md",
+      "size_bytes": 10785,
+      "sha256": "5aadbf08330539861d7480d9280438c9a02d6b44dbfc915673e50049775dbe35"
+    },
+    {
+      "path": "06_MISSIONS/WORLD_05_THERMAL_VALLEY/M14_HEAT_TRANSFER.md",
+      "size_bytes": 10700,
+      "sha256": "8d6d37883e00d8dd3868d2a2cadfe728460eea2ff8302ac30975fd6ad8ea8537"
+    },
+    {
+      "path": "06_MISSIONS/WORLD_05_THERMAL_VALLEY/M15_THERMAL_EXPANSION.md",
+      "size_bytes": 10835,
+      "sha256": "469bc9f47ed51422b3813133bf51e8114d5a6294f55dd4d47804d6a9c09615fd"
+    },
+    {
+      "path": "07_BOSS/B01_CARGO_CATASTROPHE.md",
+      "size_bytes": 5728,
+      "sha256": "fb462a49bf01bb8bc3352686c5cfc94a9ae91994cd49a4112d09f719df55bc26"
+    },
+    {
+      "path": "07_BOSS/B02_ABYSS_REACTOR.md",
+      "size_bytes": 5759,
+      "sha256": "677a1f94eff000ed25e1c1301b8a16a6870426c985ee5b470d9d853de54e9be0"
+    },
+    {
+      "path": "07_BOSS/B03_CORE_MELTDOWN.md",
+      "size_bytes": 6156,
+      "sha256": "fde8fdaf0e8d5f586ee79938357e8a3038116f4b858a19cbbcced2420d480f8c"
+    },
+    {
+      "path": "FILE_INDEX.md",
+      "size_bytes": 1413,
+      "sha256": "e5e9a3018c5db1688dfe6afc9ef5585e4e3f922709106c52ae3db4fb8ab501c8"
+    },
+    {
+      "path": "README_START_HERE.md",
+      "size_bytes": 7710,
+      "sha256": "f7a021cb424b9082b4f18a456c234bfc564e13a680b40d31ba0298d7b720d6f6"
+    }
+  ]
+}

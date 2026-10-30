@@ -1,0 +1,8 @@
+{
+  "name": "Remix KHTN 8 – JetBot AI Vượt Trạm Đại Lượng Vật Lý",
+  "description": "Game giáo dục 3D KHTN 8 (Kết nối tri thức): Thiết lập bản đồ, tạo lộ trình trạm đại lượng vật lý và điều khiển JetBot AI vượt trạm 10 câu hỏi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
