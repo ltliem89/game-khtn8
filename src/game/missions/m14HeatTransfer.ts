@@ -12,6 +12,7 @@ import {
 } from '../../types/missionSpec';
 import { createRadialShadowTexture } from '../track/proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
+import { createHeatConductionApparatus } from './proceduralLabModels';
 
 const _raycaster = new THREE.Raycaster();
 const _ndcVec = new THREE.Vector2();
@@ -297,29 +298,63 @@ export class M14HeatTransferController implements IMissionController {
       const pos = positions[idx];
       const g = new THREE.Group();
       g.position.set(pos[0], 0, pos[2]);
-      this.addShadow(g, 1.2, 1.2);
+      this.addShadow(g, 1.4, 1.4);
 
-      const plinth = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.7, 0.85, 0.4, 16),
-        new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 })
-      );
-      plinth.position.y = 0.2;
+      let chamberMesh: THREE.Mesh;
 
-      // Heat chamber geometry (octagonal cylinder)
-      const chamberMat = new THREE.MeshStandardMaterial({
-        color: spec.colorHex,
-        metalness: 0.75,
-        roughness: 0.25,
-        emissive: spec.colorHex,
-        emissiveIntensity: 0.25,
-      });
-      const chamberMesh = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.65, 0.65, 0.85, 8),
-        chamberMat
-      );
-      chamberMesh.position.y = 0.8;
+      if (spec.id === 'HEAT_CONDUCTION') {
+        // Authentic Conduction apparatus: Copper bar with wax drops and hanging pins
+        const { group: condRig, copperBar } = createHeatConductionApparatus();
+        condRig.scale.set(0.65, 0.65, 0.65);
+        g.add(condRig);
+        chamberMesh = copperBar;
+      } else if (spec.id === 'HEAT_CONVECTION') {
+        // Convection closed glass loop with circulating purple dye
+        const glassLoop = new THREE.Mesh(
+          new THREE.TorusGeometry(0.65, 0.12, 12, 32),
+          new THREE.MeshStandardMaterial({ color: 0x8b5cf6, transparent: true, opacity: 0.65 })
+        );
+        glassLoop.position.y = 1.0;
 
-      g.add(plinth, chamberMesh);
+        const burner = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.2, 0.25, 0.4, 12),
+          new THREE.MeshStandardMaterial({ color: 0x334155 })
+        );
+        burner.position.set(0, 0.2, 0);
+        g.add(glassLoop, burner);
+        chamberMesh = glassLoop;
+      } else if (spec.id === 'HEAT_RADIATION') {
+        // Radiant parabolic reflector dish and thermopile receiver
+        const dish = new THREE.Mesh(
+          new THREE.SphereGeometry(0.7, 24, 16, 0, Math.PI * 2, 0, Math.PI / 3),
+          new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.95, roughness: 0.15 })
+        );
+        dish.rotation.x = Math.PI / 2;
+        dish.position.y = 1.0;
+
+        const receiver = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.12, 0.12, 0.3, 12),
+          new THREE.MeshStandardMaterial({ color: 0x09090b, roughness: 0.9 })
+        );
+        receiver.position.set(0, 1.0, 0.4);
+        g.add(dish, receiver);
+        chamberMesh = dish;
+      } else {
+        const plinth = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.7, 0.85, 0.4, 16),
+          new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 })
+        );
+        plinth.position.y = 0.2;
+
+        const defaultChamber = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.65, 0.65, 0.85, 8),
+          new THREE.MeshStandardMaterial({ color: spec.colorHex, metalness: 0.75, roughness: 0.25 })
+        );
+        defaultChamber.position.y = 0.8;
+        g.add(plinth, defaultChamber);
+        chamberMesh = defaultChamber;
+      }
+
       g.userData = { targetId: spec.id };
       this.rootGroup.add(g);
       this.interactableMeshes.push(chamberMesh);

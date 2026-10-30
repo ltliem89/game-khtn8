@@ -12,6 +12,7 @@ import {
 } from '../../types/missionSpec';
 import { createRadialShadowTexture } from '../track/proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
+import { createFulcrumLeverApparatus } from './proceduralLabModels';
 
 const _raycaster = new THREE.Raycaster();
 const _ndcVec = new THREE.Vector2();
@@ -299,41 +300,15 @@ export class M09LeverController implements IMissionController {
       const pos = positions[idx];
       const g = new THREE.Group();
       g.position.set(pos[0], 0, pos[2]);
-      this.addShadow(g, 1.2, 1.2);
+      this.addShadow(g, 1.4, 1.4);
 
-      // Fulcrum (wedge/prism at O)
-      const fulcrumGeo = new THREE.ConeGeometry(0.35, 0.7, 4);
-      const fulcrumMat = new THREE.MeshStandardMaterial({
-        color: 0x334155,
-        metalness: 0.8,
-        roughness: 0.3,
-      });
-      const fulcrum = new THREE.Mesh(fulcrumGeo, fulcrumMat);
-      fulcrum.position.set(0, 0.35, 0);
-      fulcrum.rotation.y = Math.PI / 4;
+      // Realistic Knife-Edge Fulcrum Lever Apparatus
+      const { group: leverRig, leverBeam, fulcrumPrism, loadRock } = createFulcrumLeverApparatus();
+      leverRig.scale.set(0.6, 0.6, 0.6);
+      g.add(leverRig);
 
-      // Lever bar (steel beam)
-      const barGeo = new THREE.BoxGeometry(2.4, 0.15, 0.3);
-      const barMat = new THREE.MeshStandardMaterial({
-        color: spec.colorHex,
-        metalness: 0.7,
-        roughness: 0.25,
-        emissive: spec.colorHex,
-        emissiveIntensity: 0.25,
-      });
-      const leverBar = new THREE.Mesh(barGeo, barMat);
-      leverBar.position.set(0, 0.75, 0);
+      const leverBar = leverBeam.children[0] as THREE.Mesh;
 
-      // Load box at O2 (weight P)
-      const loadGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-      const loadMat = new THREE.MeshStandardMaterial({
-        color: spec.isValidTarget ? 0x475569 : 0xef4444,
-        metalness: 0.5,
-      });
-      const loadBox = new THREE.Mesh(loadGeo, loadMat);
-      loadBox.position.set(-0.85, 1.05, 0);
-
-      g.add(fulcrum, leverBar, loadBox);
       g.userData = { targetId: spec.id };
       this.rootGroup.add(g);
       this.interactableMeshes.push(leverBar);
@@ -350,8 +325,8 @@ export class M09LeverController implements IMissionController {
         },
         group: g,
         leverBar,
-        fulcrum,
-        loadBox,
+        fulcrum: fulcrumPrism,
+        loadBox: loadRock,
       });
     });
   }

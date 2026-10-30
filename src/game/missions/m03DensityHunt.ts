@@ -12,6 +12,11 @@ import {
 } from '../../types/missionSpec';
 import { createRadialShadowTexture } from '../track/proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
+import {
+  createLabElectronicScale,
+  createSpecimenBlock,
+  getDialScaleTexture,
+} from './proceduralLabModels';
 
 const _raycaster = new THREE.Raycaster();
 const _ndcVec = new THREE.Vector2();
@@ -323,6 +328,22 @@ export class M03DensityHuntController implements IMissionController {
     );
     topSpan.position.set(0, 7.5, -5.5);
     this.rootGroup.add(topSpan);
+
+    // Central Laboratory Balance Workstation
+    const benchMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.7, roughness: 0.3 });
+    const bench = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.8, 1.8), benchMat);
+    bench.position.set(0, 0.4, -5.5);
+    this.rootGroup.add(bench);
+
+    const { group: scaleRig } = createLabElectronicScale({
+      width: 1.6,
+      depth: 1.4,
+      height: 0.4,
+      panRadius: 0.55,
+      initialReadingKg: 0.0,
+    });
+    scaleRig.position.set(0, 0.8, -5.5);
+    this.rootGroup.add(scaleRig);
   }
 
   private buildMaterialSamplePods() {
@@ -338,11 +359,11 @@ export class M03DensityHuntController implements IMissionController {
       const pos = positions[idx];
       const g = new THREE.Group();
       g.position.set(pos[0], 0, pos[2]);
-      this.addShadow(g, 1.0, 1.0);
+      this.addShadow(g, 1.1, 1.1);
 
-      // Plinth
+      // Heavy industrial plinth base
       const plinth = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.75, 0.85, 0.45, 16),
+        new THREE.CylinderGeometry(0.85, 0.95, 0.45, 16),
         new THREE.MeshStandardMaterial({
           color: 0x0f172a,
           metalness: 0.8,
@@ -350,32 +371,81 @@ export class M03DensityHuntController implements IMissionController {
         })
       );
       plinth.position.y = 0.225;
+      g.add(plinth);
 
-      // Sample floating pod cube
-      const podMat = new THREE.MeshStandardMaterial({
-        color: spec.colorHex,
-        metalness: 0.7,
-        roughness: 0.3,
-        emissive: spec.colorHex,
-        emissiveIntensity: 0.2,
-      });
-      const pod = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), podMat);
-      pod.position.y = 1.1;
+      let pod: THREE.Mesh;
 
-      // Glow halo
+      if (spec.id === 'SAMPLE_ALU') {
+        const block = createSpecimenBlock({
+          materialType: 'ALUMINIUM',
+          size: new THREE.Vector3(0.9, 0.8, 0.9),
+          label: 'NHÔM (Al)',
+          densityValue: 2700,
+        });
+        block.position.y = 0.45;
+        g.add(block);
+        pod = block.children[0] as THREE.Mesh;
+      } else if (spec.id === 'SAMPLE_IRON') {
+        const block = createSpecimenBlock({
+          materialType: 'IRON',
+          size: new THREE.Vector3(0.9, 0.8, 0.9),
+          label: 'SẮT ĐẶC (Fe)',
+          densityValue: 7800,
+        });
+        block.position.y = 0.45;
+        g.add(block);
+        pod = block.children[0] as THREE.Mesh;
+      } else if (spec.id === 'SAMPLE_COPPER') {
+        const block = createSpecimenBlock({
+          materialType: 'COPPER',
+          size: new THREE.Vector3(0.85, 0.75, 0.85),
+          label: 'ĐỒNG (Cu)',
+          densityValue: 8900,
+        });
+        block.position.y = 0.45;
+        g.add(block);
+        pod = block.children[0] as THREE.Mesh;
+      } else if (spec.id === 'SAMPLE_WATER') {
+        const block = createSpecimenBlock({
+          materialType: 'GLASS',
+          size: new THREE.Vector3(0.9, 0.9, 0.9),
+          label: 'NƯỚC CẤT (H2O)',
+          densityValue: 1000,
+        });
+        block.position.y = 0.45;
+        g.add(block);
+        pod = block.children[0] as THREE.Mesh;
+      } else {
+        // Distractor Pressure sensor with Bourdon dial face
+        const distBox = new THREE.Mesh(
+          new THREE.BoxGeometry(0.9, 0.85, 0.9),
+          new THREE.MeshStandardMaterial({ color: 0xd97706, metalness: 0.7, roughness: 0.3 })
+        );
+        distBox.position.y = 0.875;
+        const dialTex = getDialScaleTexture('ÁP SUẤT', 'p', 0, 100, 'kPa');
+        const dialPlate = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.65, 0.65),
+          new THREE.MeshBasicMaterial({ map: dialTex })
+        );
+        dialPlate.position.set(0, 0.875, 0.46);
+        g.add(distBox, dialPlate);
+        pod = distBox;
+      }
+
+      // Glowing selection beacon ring
       const halo = new THREE.Mesh(
-        new THREE.RingGeometry(0.65, 0.8, 20),
+        new THREE.RingGeometry(0.7, 0.85, 20),
         new THREE.MeshBasicMaterial({
           color: spec.colorHex,
           side: THREE.DoubleSide,
           transparent: true,
-          opacity: 0.7,
+          opacity: 0.65,
         })
       );
       halo.rotation.x = Math.PI / 2;
-      halo.position.y = 1.1;
+      halo.position.y = 0.46;
+      g.add(halo);
 
-      g.add(plinth, pod, halo);
       g.userData = { targetId: spec.id };
       this.rootGroup.add(g);
       this.interactableMeshes.push(pod);

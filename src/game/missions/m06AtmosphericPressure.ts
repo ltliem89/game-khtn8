@@ -12,6 +12,7 @@ import {
 } from '../../types/missionSpec';
 import { createRadialShadowTexture } from '../track/proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
+import { createTorricelliBarometer } from './proceduralLabModels';
 
 const _raycaster = new THREE.Raycaster();
 const _ndcVec = new THREE.Vector2();
@@ -303,18 +304,11 @@ export class M06AtmosphericPressureController implements IMissionController {
     colRight.position.set(6.5, 4.0, -5.5);
     this.rootGroup.add(colLeft, colRight);
 
-    // High barometer glass cylinder
-    const mercuryMat = new THREE.MeshStandardMaterial({
-      color: 0x94a3b8,
-      metalness: 0.95,
-      roughness: 0.1,
-    });
-    const baroCol = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.2, 0.2, 5.0, 16),
-      mercuryMat
-    );
-    baroCol.position.set(0, 4.0, -7.0);
-    this.rootGroup.add(baroCol);
+    // Master Torricelli Glass Mercury Barometer Tower
+    const { group: masterBarometer } = createTorricelliBarometer();
+    masterBarometer.position.set(0, 1.2, -7.0);
+    masterBarometer.scale.set(1.4, 1.4, 1.4);
+    this.rootGroup.add(masterBarometer);
   }
 
   private buildAtmosphericNodes() {
@@ -330,28 +324,65 @@ export class M06AtmosphericPressureController implements IMissionController {
       const pos = positions[idx];
       const g = new THREE.Group();
       g.position.set(pos[0], 0, pos[2]);
-      this.addShadow(g, 1.0, 1.0);
+      this.addShadow(g, 1.1, 1.1);
 
-      const plinth = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.7, 0.8, 0.4, 16),
-        new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 })
-      );
-      plinth.position.y = 0.2;
+      let body: THREE.Mesh;
 
-      const bodyMat = new THREE.MeshStandardMaterial({
-        color: spec.colorHex,
-        metalness: 0.7,
-        roughness: 0.3,
-        emissive: spec.colorHex,
-        emissiveIntensity: 0.25,
-      });
-      const body = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.4, 0.45, 1.4, 16),
-        bodyMat
-      );
-      body.position.y = 1.1;
+      if (spec.id === 'ATM_TORRICELLI') {
+        const { group: baroRig, mercuryColumnMesh } = createTorricelliBarometer();
+        baroRig.scale.set(0.65, 0.65, 0.65);
+        g.add(baroRig);
+        body = mercuryColumnMesh;
+      } else if (spec.id === 'ATM_MAGDEBURG') {
+        // Magdeburg vacuum hemispheres (bán cầu hút chân không)
+        const brassMat = new THREE.MeshStandardMaterial({
+          color: 0xf59e0b,
+          metalness: 0.95,
+          roughness: 0.2,
+        });
+        const hemi1 = new THREE.Mesh(
+          new THREE.SphereGeometry(0.48, 20, 20, 0, Math.PI * 2, 0, Math.PI / 2),
+          brassMat
+        );
+        hemi1.position.y = 0.8;
+        const hemi2 = new THREE.Mesh(
+          new THREE.SphereGeometry(0.48, 20, 20, 0, Math.PI * 2, 0, Math.PI / 2),
+          brassMat
+        );
+        hemi2.rotation.x = Math.PI;
+        hemi2.position.y = 0.8;
 
-      g.add(plinth, body);
+        const valve = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.06, 0.06, 0.3, 8),
+          new THREE.MeshStandardMaterial({ color: 0xef4444 })
+        );
+        valve.position.set(0, 1.35, 0);
+
+        g.add(hemi1, hemi2, valve);
+        body = hemi1;
+      } else {
+        const plinth = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.7, 0.8, 0.4, 16),
+          new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 })
+        );
+        plinth.position.y = 0.2;
+
+        const bodyMat = new THREE.MeshStandardMaterial({
+          color: spec.colorHex,
+          metalness: 0.7,
+          roughness: 0.3,
+          emissive: spec.colorHex,
+          emissiveIntensity: 0.25,
+        });
+        const defaultMesh = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.4, 0.45, 1.4, 16),
+          bodyMat
+        );
+        defaultMesh.position.y = 1.1;
+        g.add(plinth, defaultMesh);
+        body = defaultMesh;
+      }
+
       g.userData = { targetId: spec.id };
       this.rootGroup.add(g);
       this.interactableMeshes.push(body);

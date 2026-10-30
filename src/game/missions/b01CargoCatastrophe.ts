@@ -12,6 +12,7 @@ import {
 } from '../../types/missionSpec';
 import { createRadialShadowTexture } from '../track/proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
+import { createGantryCraneAssembly } from './proceduralLabModels';
 
 const _raycaster = new THREE.Raycaster();
 const _ndcVec = new THREE.Vector2();
@@ -271,26 +272,17 @@ export class B01CargoCatastropheController implements IMissionController {
   }
 
   private buildCatastropheEnvironment() {
-    // Collapsed giant gantry crane leaning over track
-    const gantryMat = new THREE.MeshStandardMaterial({
-      color: 0xd97706,
-      metalness: 0.8,
-      roughness: 0.3,
-    });
-    const craneArm = new THREE.Mesh(
-      new THREE.BoxGeometry(1.2, 14.0, 1.2),
-      gantryMat
-    );
-    craneArm.position.set(-4.5, 6.0, -8.0);
-    craneArm.rotation.z = -0.35;
-    this.rootGroup.add(craneArm);
+    // Realistic Maritime Gantry Crane with Suspended Container
+    const { group: craneRig } = createGantryCraneAssembly();
+    craneRig.position.set(0, 0, -8.0);
+    this.rootGroup.add(craneRig);
 
-    // Hazard lights
+    // Hazard lights flashing atop crane
     const hazardLight = new THREE.Mesh(
       new THREE.SphereGeometry(0.35, 16, 16),
       new THREE.MeshBasicMaterial({ color: 0xef4444 })
     );
-    hazardLight.position.set(-2.0, 10.5, -8.0);
+    hazardLight.position.set(-5.5, 9.8, -8.0);
     this.rootGroup.add(hazardLight);
 
     // Warning telegraph rings on floor

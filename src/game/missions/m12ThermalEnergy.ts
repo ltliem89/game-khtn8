@@ -12,6 +12,7 @@ import {
 } from '../../types/missionSpec';
 import { createRadialShadowTexture } from '../track/proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
+import { getDialScaleTexture, getBrushedMetalBumpTexture } from './proceduralLabModels';
 
 const _raycaster = new THREE.Raycaster();
 const _ndcVec = new THREE.Vector2();
@@ -300,26 +301,69 @@ export class M12ThermalEnergyController implements IMissionController {
       this.addShadow(g, 1.2, 1.2);
 
       const plinth = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.7, 0.85, 0.4, 16),
+        new THREE.CylinderGeometry(0.75, 0.85, 0.35, 16),
         new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 })
       );
-      plinth.position.y = 0.2;
+      plinth.position.y = 0.175;
 
-      // Thermal capsule pod
-      const podMat = new THREE.MeshStandardMaterial({
-        color: spec.colorHex,
-        metalness: 0.7,
-        roughness: 0.25,
-        emissive: spec.colorHex,
-        emissiveIntensity: 0.3,
-      });
-      const podMesh = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.4, 0.8, 8, 16),
-        podMat
-      );
-      podMesh.position.y = 0.9;
+      let podMesh: THREE.Mesh;
 
-      g.add(plinth, podMesh);
+      if (spec.id === 'THERM_HOT_ZONE') {
+        // Finned geothermal copper heat-pipe radiator
+        const heatPipe = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.25, 0.25, 1.4, 16),
+          new THREE.MeshStandardMaterial({ color: 0xd97706, metalness: 0.95, roughness: 0.2 })
+        );
+        heatPipe.position.y = 0.85;
+
+        // Aluminium radial cooling fins
+        const finMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.9 });
+        for (let y = 0.35; y <= 1.35; y += 0.15) {
+          const fin = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.03, 16), finMat);
+          fin.position.y = y;
+          g.add(fin);
+        }
+        g.add(heatPipe);
+        podMesh = heatPipe;
+      } else if (spec.id === 'THERM_COLD_ZONE') {
+        // Cryogenic insulated conduit with frosty white rime
+        const cryoConduit = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.38, 0.38, 1.4, 16),
+          new THREE.MeshStandardMaterial({ color: 0xe0f2fe, metalness: 0.8, roughness: 0.1 })
+        );
+        cryoConduit.position.y = 0.85;
+
+        const frostRing = new THREE.Mesh(
+          new THREE.TorusGeometry(0.42, 0.05, 8, 20),
+          new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 })
+        );
+        frostRing.rotation.x = Math.PI / 2;
+        frostRing.position.y = 0.85;
+        g.add(cryoConduit, frostRing);
+        podMesh = cryoConduit;
+      } else {
+        // Friction work brake drum with glowing orange rotor
+        const brakeRotor = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.55, 0.55, 0.2, 24),
+          new THREE.MeshStandardMaterial({
+            color: 0xef4444,
+            emissive: 0xd97706,
+            emissiveIntensity: 0.6,
+            metalness: 0.8,
+          })
+        );
+        brakeRotor.position.y = 0.7;
+
+        const caliper = new THREE.Mesh(
+          new THREE.BoxGeometry(0.3, 0.35, 0.5),
+          new THREE.MeshStandardMaterial({ color: 0x18181b, metalness: 0.85 })
+        );
+        caliper.position.set(0.45, 0.7, 0);
+        g.add(brakeRotor, caliper);
+        podMesh = brakeRotor;
+      }
+
+      g.add(plinth);
       g.userData = { targetId: spec.id };
       this.rootGroup.add(g);
       this.interactableMeshes.push(podMesh);

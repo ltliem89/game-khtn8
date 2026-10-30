@@ -12,6 +12,7 @@ import {
 } from '../../types/missionSpec';
 import { createRadialShadowTexture } from '../track/proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
+import { createAnalogueLabMeter } from './proceduralLabModels';
 
 const _raycaster = new THREE.Raycaster();
 const _ndcVec = new THREE.Vector2();
@@ -301,26 +302,25 @@ export class M11VoltageController implements IMissionController {
       this.addShadow(g, 1.2, 1.2);
 
       const plinth = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.7, 0.85, 0.4, 16),
+        new THREE.CylinderGeometry(0.75, 0.85, 0.35, 16),
         new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 })
       );
-      plinth.position.y = 0.2;
+      plinth.position.y = 0.175;
 
-      // Voltmeter rectangular meter housing
-      const meterMat = new THREE.MeshStandardMaterial({
-        color: spec.colorHex,
-        metalness: 0.75,
-        roughness: 0.2,
-        emissive: spec.colorHex,
-        emissiveIntensity: 0.25,
-      });
-      const voltmeterMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(1.0, 0.8, 0.4),
-        meterMat
+      // Authentic Laboratory Voltmeter Apparatus
+      const isAmmeterDistractor = !spec.isValidTarget;
+      const { group: meterRig, setReadingValue } = createAnalogueLabMeter(
+        isAmmeterDistractor ? 'ammeter' : 'voltmeter'
       );
-      voltmeterMesh.position.y = 0.8;
+      meterRig.scale.set(0.65, 0.65, 0.65);
+      meterRig.position.y = 0.35;
 
-      // Parallel test leads (two probes bridging side by side)
+      const readingVal = spec.numericValue || 3.0;
+      setReadingValue(readingVal, isAmmeterDistractor ? 3.0 : 15.0);
+
+      const voltmeterMesh = meterRig.children[0] as THREE.Mesh;
+
+      // Parallel test leads bridging side by side
       const leadPoints = [
         new THREE.Vector3(-0.6, 0.3, 0.3),
         new THREE.Vector3(-0.35, 0.8, 0.3),
@@ -334,7 +334,7 @@ export class M11VoltageController implements IMissionController {
       });
       const parallelLeads = new THREE.Line(leadGeo, leadMat);
 
-      g.add(plinth, voltmeterMesh, parallelLeads);
+      g.add(plinth, meterRig, parallelLeads);
       g.userData = { targetId: spec.id };
       this.rootGroup.add(g);
       this.interactableMeshes.push(voltmeterMesh);

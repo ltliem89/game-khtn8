@@ -12,6 +12,7 @@ import {
 } from '../../types/missionSpec';
 import { createRadialShadowTexture } from '../track/proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
+import { createThermalExpansionRig } from './proceduralLabModels';
 
 const _raycaster = new THREE.Raycaster();
 const _ndcVec = new THREE.Vector2();
@@ -297,29 +298,57 @@ export class M15ThermalExpansionController implements IMissionController {
       const pos = positions[idx];
       const g = new THREE.Group();
       g.position.set(pos[0], 0, pos[2]);
-      this.addShadow(g, 1.2, 1.2);
+      this.addShadow(g, 1.4, 1.4);
 
-      const plinth = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.7, 0.85, 0.4, 16),
-        new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 })
-      );
-      plinth.position.y = 0.2;
+      let jointMesh: THREE.Mesh;
 
-      // Expansion bridge joint (interlocking teeth)
-      const jointMat = new THREE.MeshStandardMaterial({
-        color: spec.colorHex,
-        metalness: 0.8,
-        roughness: 0.2,
-        emissive: spec.colorHex,
-        emissiveIntensity: 0.25,
-      });
-      const jointMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(1.2, 0.4, 0.7),
-        jointMat
-      );
-      jointMesh.position.y = 0.6;
+      if (spec.id === 'EXP_SOLID_JOINT') {
+        // Authentic Gravesande Ring & Ball apparatus
+        const { group: gravRig, animatedPart } = createThermalExpansionRig('GRAVESANDE');
+        gravRig.scale.set(0.65, 0.65, 0.65);
+        g.add(gravRig);
+        jointMesh = animatedPart;
+      } else if (spec.id === 'EXP_BIMETALLIC' || !spec.isValidTarget) {
+        // Authentic Bimetallic Strip with burner
+        const { group: biRig, animatedPart } = createThermalExpansionRig('BIMETALLIC');
+        biRig.scale.set(0.65, 0.65, 0.65);
+        g.add(biRig);
+        jointMesh = animatedPart;
+      } else {
+        // Bridge expansion finger joint on roller bearings
+        const plinth = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.75, 0.85, 0.35, 16),
+          new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 })
+        );
+        plinth.position.y = 0.175;
 
-      g.add(plinth, jointMesh);
+        const joint = new THREE.Mesh(
+          new THREE.BoxGeometry(1.4, 0.45, 0.8),
+          new THREE.MeshStandardMaterial({
+            color: spec.colorHex,
+            metalness: 0.85,
+            roughness: 0.25,
+            emissive: spec.colorHex,
+            emissiveIntensity: 0.25,
+          })
+        );
+        joint.position.y = 0.6;
+
+        // Cylindrical roller bearings underneath
+        [-0.4, 0.4].forEach((rx) => {
+          const roller = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.08, 0.08, 0.75, 12),
+            new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.95 })
+          );
+          roller.rotation.x = Math.PI / 2;
+          roller.position.set(rx, 0.42, 0);
+          g.add(roller);
+        });
+
+        g.add(plinth, joint);
+        jointMesh = joint;
+      }
+
       g.userData = { targetId: spec.id };
       this.rootGroup.add(g);
       this.interactableMeshes.push(jointMesh);

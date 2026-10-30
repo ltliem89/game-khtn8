@@ -12,6 +12,11 @@ import {
 } from '../../types/missionSpec';
 import { createRadialShadowTexture } from '../track/proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
+import {
+  createAnalogueLabMeter,
+  createFulcrumLeverApparatus,
+  getDialScaleTexture,
+} from './proceduralLabModels';
 
 const _raycaster = new THREE.Raycaster();
 const _ndcVec = new THREE.Vector2();
@@ -301,82 +306,95 @@ export class B02AbyssReactorController implements IMissionController {
   }
 
   private buildPhaseModules() {
-    // 1. Skylock Module (left-high)
+    // 1. Skylock Module (Torricelli Vacuum Air Lock Ring)
     const skylockGroup = new THREE.Group();
     skylockGroup.position.set(-5.5, 0, -3.5);
-    this.addShadow(skylockGroup, 1.5, 1.5);
+    this.addShadow(skylockGroup, 1.6, 1.6);
+
     const skyMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.8, 0.9, 1.6, 16),
+      new THREE.CylinderGeometry(0.85, 0.95, 1.6, 24),
       new THREE.MeshStandardMaterial({
-        color: 0x38bdf8,
-        metalness: 0.8,
-        emissive: 0x38bdf8,
-        emissiveIntensity: 0.3,
+        color: 0x0284c7,
+        metalness: 0.9,
+        roughness: 0.2,
+        emissive: 0x0284c7,
+        emissiveIntensity: 0.35,
       })
     );
     skyMesh.position.y = 0.8;
     skyMesh.userData = { targetId: 'B02_P1_ATMOS' };
-    skylockGroup.add(skyMesh);
+
+    // Vacuum seal ring
+    const sealRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.9, 0.08, 12, 32),
+      new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 0.5 })
+    );
+    sealRing.rotation.x = Math.PI / 2;
+    sealRing.position.y = 1.62;
+
+    skylockGroup.add(skyMesh, sealRing);
     this.skylockMesh = skyMesh;
     this.rootGroup.add(skylockGroup);
     this.interactableMeshes.push(skyMesh);
 
-    // 2. Buoyancy Raft Module (left-center)
+    // 2. Buoyancy Raft Module (Archimedes Flotation Pontoons)
     const raftGroup = new THREE.Group();
     raftGroup.position.set(-2.8, 0, -2.5);
-    this.addShadow(raftGroup, 1.5, 1.5);
+    this.addShadow(raftGroup, 1.6, 1.6);
+
     const raft = new THREE.Mesh(
-      new THREE.BoxGeometry(1.6, 0.4, 1.6),
+      new THREE.BoxGeometry(1.8, 0.45, 1.8),
       new THREE.MeshStandardMaterial({
-        color: 0x06b6d4,
-        metalness: 0.6,
-        emissive: 0x06b6d4,
-        emissiveIntensity: 0.2,
+        color: 0x0f766e,
+        metalness: 0.7,
+        roughness: 0.3,
+        emissive: 0x0f766e,
+        emissiveIntensity: 0.25,
       })
     );
-    raft.position.y = 0.2;
+    raft.position.y = 0.225;
     raft.userData = { targetId: 'B02_P2_BUOYANCY' };
-    raftGroup.add(raft);
+
+    // Waterline demarcation ring
+    const raftWaterline = new THREE.Mesh(
+      new THREE.BoxGeometry(1.85, 0.04, 1.85),
+      new THREE.MeshBasicMaterial({ color: 0x2dd4bf })
+    );
+    raftWaterline.position.y = 0.225;
+
+    raftGroup.add(raft, raftWaterline);
     this.raftMesh = raft;
     this.rootGroup.add(raftGroup);
     this.interactableMeshes.push(raft);
 
-    // 3. Lever Release Module (right-center)
+    // 3. Lever Release Module (Knife-Edge Fulcrum Rig)
     const leverGroup = new THREE.Group();
     leverGroup.position.set(2.8, 0, -2.5);
-    this.addShadow(leverGroup, 1.5, 1.5);
-    const lev = new THREE.Mesh(
-      new THREE.BoxGeometry(2.4, 0.2, 0.3),
-      new THREE.MeshStandardMaterial({
-        color: 0xf59e0b,
-        metalness: 0.7,
-        emissive: 0xf59e0b,
-        emissiveIntensity: 0.2,
-      })
-    );
-    lev.position.y = 0.6;
+    this.addShadow(leverGroup, 1.6, 1.6);
+
+    const { group: leverRig, leverBeam } = createFulcrumLeverApparatus();
+    leverRig.scale.set(0.55, 0.55, 0.55);
+    leverGroup.add(leverRig);
+
+    const lev = leverBeam.children[0] as THREE.Mesh;
     lev.userData = { targetId: 'B02_P3_LEVER' };
-    leverGroup.add(lev);
     this.leverMesh = lev;
     this.rootGroup.add(leverGroup);
     this.interactableMeshes.push(lev);
 
-    // 4. Current Restart Module (right-high)
+    // 4. Current Restart Module (High-Voltage Moving-Coil Ammeter Substation)
     const ammeterGroup = new THREE.Group();
     ammeterGroup.position.set(5.5, 0, -3.5);
-    this.addShadow(ammeterGroup, 1.5, 1.5);
-    const ammeter = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.7, 0.75, 0.4, 24),
-      new THREE.MeshStandardMaterial({
-        color: 0x6366f1,
-        metalness: 0.8,
-        emissive: 0x6366f1,
-        emissiveIntensity: 0.2,
-      })
-    );
-    ammeter.position.y = 0.6;
+    this.addShadow(ammeterGroup, 1.6, 1.6);
+
+    const { group: meterRig, setReadingValue } = createAnalogueLabMeter('ammeter');
+    meterRig.scale.set(0.65, 0.65, 0.65);
+    meterRig.position.y = 0.3;
+    setReadingValue(2.5, 3.0);
+
+    const ammeter = meterRig.children[0] as THREE.Mesh;
     ammeter.userData = { targetId: 'B02_P4_CURRENT' };
-    ammeterGroup.add(ammeter);
+    ammeterGroup.add(meterRig);
     this.ammeterConsoleMesh = ammeter;
     this.rootGroup.add(ammeterGroup);
     this.interactableMeshes.push(ammeter);

@@ -12,6 +12,7 @@ import {
 } from '../../types/missionSpec';
 import { createRadialShadowTexture } from '../track/proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
+import { createCalorimeterSetup } from './proceduralLabModels';
 
 const _raycaster = new THREE.Raycaster();
 const _ndcVec = new THREE.Vector2();
@@ -298,37 +299,19 @@ export class M13JoulemeterController implements IMissionController {
       const pos = positions[idx];
       const g = new THREE.Group();
       g.position.set(pos[0], 0, pos[2]);
-      this.addShadow(g, 1.2, 1.2);
+      this.addShadow(g, 1.4, 1.4);
 
-      const tableBase = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.7, 0.85, 0.4, 16),
-        new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 })
-      );
-      tableBase.position.y = 0.2;
+      // Authentic Laboratory Calorimeter & Joulemeter Setup
+      const { group: calRig, updateJoules } = createCalorimeterSetup();
+      calRig.scale.set(0.65, 0.65, 0.65);
+      if (spec.numericValue) {
+        updateJoules(spec.numericValue);
+      }
+      g.add(calRig);
 
-      // Calorimeter flask (insulated cup)
-      const flaskMat = new THREE.MeshStandardMaterial({
-        color: spec.colorHex,
-        metalness: 0.8,
-        roughness: 0.2,
-        emissive: spec.colorHex,
-        emissiveIntensity: 0.25,
-      });
-      const flaskMesh = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.5, 0.45, 0.9, 16),
-        flaskMat
-      );
-      flaskMesh.position.y = 0.75;
+      const flaskMesh = calRig.children[0] as THREE.Mesh;
+      const probeMesh = calRig.children[2] as THREE.Mesh;
 
-      // Joulemeter sensor probe dipped into flask
-      const probeMesh = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.06, 0.06, 1.1, 8),
-        new THREE.MeshStandardMaterial({ color: 0xf8fafc, metalness: 0.9 })
-      );
-      probeMesh.position.set(0.15, 1.1, 0);
-      probeMesh.rotation.z = -0.15;
-
-      g.add(tableBase, flaskMesh, probeMesh);
       g.userData = { targetId: spec.id };
       this.rootGroup.add(g);
       this.interactableMeshes.push(flaskMesh);

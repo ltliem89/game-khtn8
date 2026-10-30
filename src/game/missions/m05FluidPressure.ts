@@ -12,6 +12,7 @@ import {
 } from '../../types/missionSpec';
 import { createRadialShadowTexture } from '../track/proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
+import { createHydrostaticColumnRig } from './proceduralLabModels';
 
 const _raycaster = new THREE.Raycaster();
 const _ndcVec = new THREE.Vector2();
@@ -324,29 +325,29 @@ export class M05FluidPressureController implements IMissionController {
       const pos = positions[idx];
       const g = new THREE.Group();
       g.position.set(pos[0], 0, pos[2]);
-      this.addShadow(g, 1.0, 1.0);
+      this.addShadow(g, 1.3, 1.3);
 
-      // Gate arch
+      // Gate arch with reinforced structural steel
       const frameMat = new THREE.MeshStandardMaterial({
         color: 0x1e293b,
         metalness: 0.85,
         roughness: 0.25,
       });
       const leftCol = new THREE.Mesh(
-        new THREE.BoxGeometry(0.25, 2.8, 0.25),
+        new THREE.BoxGeometry(0.3, 3.2, 0.3),
         frameMat
       );
-      leftCol.position.set(-0.6, 1.4, 0);
+      leftCol.position.set(-0.7, 1.6, 0);
       const rightCol = new THREE.Mesh(
-        new THREE.BoxGeometry(0.25, 2.8, 0.25),
+        new THREE.BoxGeometry(0.3, 3.2, 0.3),
         frameMat
       );
-      rightCol.position.set(0.6, 1.4, 0);
+      rightCol.position.set(0.7, 1.6, 0);
       const topBeam = new THREE.Mesh(
-        new THREE.BoxGeometry(1.45, 0.25, 0.25),
+        new THREE.BoxGeometry(1.7, 0.35, 0.35),
         frameMat
       );
-      topBeam.position.set(0, 2.8, 0);
+      topBeam.position.set(0, 3.2, 0);
 
       // Moving hydraulic gate door
       const doorMat = new THREE.MeshStandardMaterial({
@@ -356,10 +357,16 @@ export class M05FluidPressureController implements IMissionController {
         emissive: spec.colorHex,
         emissiveIntensity: 0.3,
       });
-      const door = new THREE.Mesh(new THREE.BoxGeometry(1.1, 2.6, 0.15), doorMat);
-      door.position.set(0, 1.3, 0);
+      const door = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.9, 0.18), doorMat);
+      door.position.set(0, 1.45, 0);
 
-      g.add(leftCol, rightCol, topBeam, door);
+      // Authentic Hydrostatic column rig with U-tube manometer
+      const depthFrac = spec.numericValue ? spec.numericValue / 100000 : 0.3;
+      const { group: columnRig } = createHydrostaticColumnRig({ depthFraction: depthFrac });
+      columnRig.scale.set(0.55, 0.55, 0.55);
+      columnRig.position.set(1.4, 0, 0);
+
+      g.add(leftCol, rightCol, topBeam, door, columnRig);
       g.userData = { targetId: spec.id };
       this.rootGroup.add(g);
       this.interactableMeshes.push(door);

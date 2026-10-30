@@ -1,9 +1,29 @@
 # Execution Status — JETBOT-SCI8
 
 ## Current Phase
-PHASE FINAL — All 15 Missions (M01–M15) & 3 Boss Encounters (B01–B03) Complete & Integrated
+PHASE FINAL — All 15 Missions (M01–M15) & 3 Boss Encounters (B01–B03) Complete, Graphically Upgraded to Authentic Scientific Apparatus & Fully Integrated
 
 ## Completed
+- **Scientific 3D Visual Realism & Laboratory Apparatus Upgrade (M02–M15 & B01–B03)**:
+  - Created shared high-fidelity laboratory procedural model library `src/game/missions/proceduralLabModels.ts`.
+  - Upgraded all 3D props from primitive boxes/cylinders to authentic physical laboratory and engineering apparatus according to KHTN 8 SGK standards:
+    * `M02_VOLUME`: Borosilicate graduated cylinders with hexagonal anti-roll base, pouring spout, high-res printed mL scale, fluid column with concave meniscus, and wire-suspended displacement rock ($V_{\text{vật}} = V_2 - V_1$).
+    * `M03_DENSITY`: Laboratory precision electronic balance with live LED display, authentic PBR material ingots (brushed aluminium $D=2700\,\text{kg/m}^3$, rough cast iron $D=7800\,\text{kg/m}^3$, pure copper $D=8900\,\text{kg/m}^3$, distilled water $D=1000\,\text{kg/m}^3$).
+    * `M04_SURFACE_PRESSURE`: Hydraulic compression press rigs with 4 chromed columns, Bourdon pressure gauge ($p=F/S$), interchangeable pressure feet (wide snow shoe vs stiletto chisel blade), and compressible sand bed showing realistic indentation depressions.
+    * `M05_LIQUID_PRESSURE`: Transparent hydrostatic columns with depth marking rings ($2\,\text{m}, 5\,\text{m}, 8\,\text{m}$), submerged rubber membrane sensor capsule, and dual-limb U-tube manometer with differential height $\Delta h = d \cdot h$.
+    * `B01_CARGO_CATASTROPHE`: Heavy industrial maritime gantry crane with yellow-black hazard trusses, trolley carriage, twin wire-rope pulleys, spreader bar, and suspended corrugated ISO shipping container.
+    * `M06_ATMOSPHERIC_PRESSURE`: Authentic Torricelli mercury barometer with $760\,\text{mmHg}$ silvery mercury column, Torricellian vacuum chamber, mm scale ruler, and clamped Magdeburg vacuum hemispheres.
+    * `M07_ARCHIMEDES`: Complete Eureka overflow can with angled spout, catch beaker, and precision spring dynamometer with calibrated Newton scale ($0–5\,\text{N}$) and submerged metal cylinder.
+    * `M08_MOMENT`: Rotary moment test rig with ball-bearing pivot hub, calibrated slotted torque arm with distance notches ($d_1, d_2, d_3$), sliding counterweight block, and torque wrench indicator dial ($M = F \cdot d$).
+    * `M09_LEVER`: Hardened triangular steel prism fulcrum ($O$), calibrated notched lever beam, irregular granite boulder load ($O_2$), and ergonomic effort handle ($O_1$).
+    * `M10_CURRENT`: Moving-coil analogue ammeters in slanted Bakelite housing with curved glass, dial face "A", mirror strip, knife-edge red needle, and dual red $(+)$ / black $(-)$ binding posts with copper cables.
+    * `B02_ABYSS_REACTOR`: Torricelli vacuum skylock ring, Archimedes floating pontoons with waterline marks, knife-edge lever release, and high-voltage busbar substation.
+    * `M11_VOLTAGE`: Laboratory analogue DC voltmeters with "V" dial face, dual ranges ($0–3\,\text{V}$ and $0–15\,\text{V}$), knife-edge needle, and parallel test probes bridging circuit branches.
+    * `M12_THERMAL_ENERGY`: Finned geothermal copper heat-pipe radiators, cryogenic conduit with frosty white rime, and glowing cast-iron friction brake rotor ($\Delta U = A$).
+    * `M13_JOULEMETER`: Double-walled insulated calorimeter vessel with cork stopper, glass thermometer with red mercury capillary, immersed coiled heating element, and digital Joulemeter box with glowing LED readout.
+    * `M14_HEAT_TRANSFER`: 3-in-1 thermal transfer demonstrator: copper conduction bar with spirit burner and falling wax pins, closed glass convection circulation loop, and parabolic radiation reflector dish.
+    * `M15_THERMAL_EXPANSION`: Gravesande ring & ball apparatus, bimetallic thermostat strip curving under flame, and bridge expansion finger-joints resting on steel cylindrical roller bearings.
+    * `B03_CORE_MELTDOWN`: Grand Tokamak fusion reactor with concentric toroidal magnetic containment rings, glowing plasma core, cryogenic coolant manifold, and 4 specialized subsystem testing consoles.
 - **Baseline Audit & M01 Protection**:
   - Node.js v24.19.0, npm 12.2.1, TypeScript 7.0.2, Three.js 0.186.1, React 19.
   - Verified `src/game/missions/m01MassVault.ts`: Steel I-beam structural columns with contact shadows, NOVA-8 digital scale with CanvasTexture readout, overhead crane hazards with 2-second telegraph warning rings, moving conveyor belt with rolling slats, 5 interactive cargo crates (`CRATE_A1` through `CRATE_E5`) with Science Pulse, hit-flash, squash-and-stretch, and accurate KHTN 8 mass distinction ($m$ vs $P$ vs $V$).

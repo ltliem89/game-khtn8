@@ -12,6 +12,7 @@ import {
 } from '../../types/missionSpec';
 import { createRadialShadowTexture } from '../track/proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
+import { createGraduatedCylinder } from './proceduralLabModels';
 
 const _raycaster = new THREE.Raycaster();
 const _ndcVec = new THREE.Vector2();
@@ -365,19 +366,6 @@ export class M02VolumeMazeController implements IMissionController {
   }
 
   private buildMeasuringVessels() {
-    const glassMat = new THREE.MeshStandardMaterial({
-      color: 0xe0f2fe,
-      transparent: true,
-      opacity: 0.55,
-      roughness: 0.15,
-      metalness: 0.2,
-    });
-    const standMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b,
-      metalness: 0.8,
-      roughness: 0.3,
-    });
-
     const positions: [number, number, number][] = [
       [-4.6, 0.8, -3.2],
       [-2.3, 0.8, -2.0],
@@ -390,45 +378,50 @@ export class M02VolumeMazeController implements IMissionController {
       const pos = positions[idx];
       const g = new THREE.Group();
       g.position.set(pos[0], 0, pos[2]);
-      this.addShadow(g, 0.9, 0.9);
+      this.addShadow(g, 1.1, 1.1);
 
-      const stand = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.7, 0.8, 0.4, 16),
-        standMat
-      );
-      stand.position.y = 0.2;
-
-      const cylHeight = 1.6;
-      const glass = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.45, 0.45, cylHeight, 16),
-        glassMat
-      );
-      glass.position.y = 0.4 + cylHeight / 2;
-
-      // Internal fluid level
+      // Realistic Borosilicate Graduated Cylinder or Distractor Voltage Apparatus
       const fillPct = spec.numericValue ? spec.numericValue / 600 : 0.2;
-      const fluidHeight = cylHeight * fillPct;
-      const liquid = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.42, 0.42, fluidHeight, 16),
-        new THREE.MeshStandardMaterial({
-          color: spec.colorHex,
-          emissive: spec.colorHex,
-          emissiveIntensity: 0.4,
-          transparent: true,
-          opacity: 0.8,
-        })
-      );
-      liquid.position.y = 0.4 + fluidHeight / 2;
+      const isDisplacementStone = spec.id === 'VESSEL_B2';
+      const isDistractor = spec.id === 'VESSEL_DISTRACTOR';
 
-      // Graduation markings ring
-      const markRing = new THREE.Mesh(
-        new THREE.TorusGeometry(0.46, 0.02, 6, 16),
-        new THREE.MeshBasicMaterial({ color: 0xffffff })
-      );
-      markRing.rotation.x = Math.PI / 2;
-      markRing.position.y = 0.4 + fluidHeight;
+      const { group: cylinderRig, liquidMesh, stoneMesh } = createGraduatedCylinder({
+        radius: 0.46,
+        height: 2.2,
+        liquidFraction: fillPct,
+        liquidColor: spec.colorHex,
+        liquidEmissive: spec.colorHex,
+        maxVolumeMl: 600,
+        includeStone: isDisplacementStone,
+        stoneRadius: 0.22,
+      });
 
-      g.add(stand, glass, liquid, markRing);
+      // Glass mesh is the main interactable cylinder
+      const glass = cylinderRig.children.find(
+        (c) => c instanceof THREE.Mesh && c.geometry instanceof THREE.CylinderGeometry && c !== liquidMesh
+      ) as THREE.Mesh || liquidMesh;
+
+      g.add(cylinderRig);
+
+      // If distractor (Voltage), add high-voltage warning sign & copper terminals
+      if (isDistractor) {
+        const warningSign = new THREE.Mesh(
+          new THREE.BoxGeometry(0.5, 0.5, 0.08),
+          new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xd97706, emissiveIntensity: 0.4 })
+        );
+        warningSign.position.set(0, 1.8, 0.52);
+        g.add(warningSign);
+
+        [-0.2, 0.2].forEach((tx) => {
+          const terminal = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.04, 0.04, 0.3, 8),
+            new THREE.MeshStandardMaterial({ color: 0xd97706, metalness: 0.9 })
+          );
+          terminal.position.set(tx, 2.4, 0);
+          g.add(terminal);
+        });
+      }
+
       g.userData = { targetId: spec.id };
       this.rootGroup.add(g);
       this.interactableMeshes.push(glass);
@@ -444,7 +437,7 @@ export class M02VolumeMazeController implements IMissionController {
           worldPosition: { x: pos[0], y: pos[1], z: pos[2] },
         },
         group: g,
-        liquidMesh: liquid,
+        liquidMesh,
         cylinderGlass: glass,
         hitFlashTimer: 0,
         squashTimer: 0,

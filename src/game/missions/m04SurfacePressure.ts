@@ -12,6 +12,7 @@ import {
 } from '../../types/missionSpec';
 import { createRadialShadowTexture } from '../track/proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
+import { createHydraulicPressRig } from './proceduralLabModels';
 
 const _raycaster = new THREE.Raycaster();
 const _ndcVec = new THREE.Vector2();
@@ -320,34 +321,34 @@ export class M04SurfacePressureController implements IMissionController {
       const pos = positions[idx];
       const g = new THREE.Group();
       g.position.set(pos[0], 0, pos[2]);
-      this.addShadow(g, 1.1, 1.1);
+      this.addShadow(g, 1.3, 1.3);
 
-      const basePlate = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.85, 0.95, 0.2, 16),
-        new THREE.MeshStandardMaterial({
-          color: 0x1e293b,
-          metalness: 0.8,
-          roughness: 0.3,
-        })
-      );
-      basePlate.position.y = 0.1;
+      const isSharpIce = spec.id === 'SURF_ICE';
+      const isWideTrack = spec.id === 'SURF_SAND' || spec.id === 'SURF_MUD';
+      const footType = isSharpIce ? 'NARROW_BLADE' : isWideTrack ? 'WIDE_PLATE' : 'STANDARD_TREAD';
+      const deformation = isSharpIce ? 0.45 : isWideTrack ? 0.08 : 0.22;
 
-      const pad = new THREE.Mesh(
-        new THREE.BoxGeometry(1.2, 0.25, 1.2),
-        new THREE.MeshStandardMaterial({
-          color: spec.colorHex,
-          metalness: 0.5,
-          roughness: 0.4,
-          emissive: spec.colorHex,
-          emissiveIntensity: 0.25,
-        })
-      );
-      pad.position.y = 0.32;
+      // Realistic Hydraulic Press & Compression Rig
+      const { group: pressRig, ramGroup, bedMesh } = createHydraulicPressRig({
+        footType,
+        surfaceDeformation: deformation,
+      });
+      pressRig.scale.set(0.65, 0.65, 0.65);
+      g.add(pressRig);
 
-      g.add(basePlate, pad);
+      // Distractor indicator banner
+      if (spec.id === 'SURF_DISTRACTOR') {
+        const warnFlag = new THREE.Mesh(
+          new THREE.BoxGeometry(0.5, 0.4, 0.05),
+          new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0xb91c1c, emissiveIntensity: 0.5 })
+        );
+        warnFlag.position.set(0, 3.2, 0.6);
+        g.add(warnFlag);
+      }
+
       g.userData = { targetId: spec.id };
       this.rootGroup.add(g);
-      this.interactableMeshes.push(pad);
+      this.interactableMeshes.push(bedMesh);
 
       this.pads.push({
         spec,
@@ -360,7 +361,7 @@ export class M04SurfacePressureController implements IMissionController {
           worldPosition: { x: pos[0], y: pos[1], z: pos[2] },
         },
         group: g,
-        padMesh: pad,
+        padMesh: bedMesh,
       });
     });
   }

@@ -12,6 +12,7 @@ import {
 } from '../../types/missionSpec';
 import { createRadialShadowTexture } from '../track/proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
+import { getDialScaleTexture, getBrushedMetalBumpTexture } from './proceduralLabModels';
 
 const _raycaster = new THREE.Raycaster();
 const _ndcVec = new THREE.Vector2();
@@ -298,7 +299,7 @@ export class M08MomentController implements IMissionController {
     craneTower.position.set(0, 3.5, -6.5);
     this.rootGroup.add(craneTower);
 
-    // Rotating crane horizontal arm
+    // Rotating crane horizontal arm with counterweight & distance notches
     this.rotatingCraneArm = new THREE.Group();
     this.rotatingCraneArm.position.set(0, 7.0, -6.5);
 
@@ -311,7 +312,25 @@ export class M08MomentController implements IMissionController {
       })
     );
     boom.position.set(2.5, 0, 0);
-    this.rotatingCraneArm.add(boom);
+
+    // Heavy counterweight on back arm
+    const counterweight = new THREE.Mesh(
+      new THREE.BoxGeometry(1.6, 1.2, 1.2),
+      new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.85 })
+    );
+    counterweight.position.set(-2.4, 0, 0);
+
+    // Distance graduation marks on boom
+    for (let x = 0; x <= 7.0; x += 1.5) {
+      const mark = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.04, 0.5, 8),
+        new THREE.MeshBasicMaterial({ color: 0xffffff })
+      );
+      mark.position.set(x, 0, 0.25);
+      this.rotatingCraneArm.add(mark);
+    }
+
+    this.rotatingCraneArm.add(boom, counterweight);
     this.rootGroup.add(this.rotatingCraneArm);
   }
 
@@ -328,36 +347,45 @@ export class M08MomentController implements IMissionController {
       const pos = positions[idx];
       const g = new THREE.Group();
       g.position.set(pos[0], 0, pos[2]);
-      this.addShadow(g, 1.0, 1.0);
+      this.addShadow(g, 1.1, 1.1);
 
       const plinth = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.7, 0.8, 0.4, 16),
+        new THREE.CylinderGeometry(0.75, 0.85, 0.4, 16),
         new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 })
       );
       plinth.position.y = 0.2;
 
-      // Pivot gear shape (disc with teeth)
+      // Pivot gear hub with central ball bearing
       const gearMat = new THREE.MeshStandardMaterial({
         color: spec.colorHex,
-        metalness: 0.75,
-        roughness: 0.25,
+        metalness: 0.85,
+        roughness: 0.2,
         emissive: spec.colorHex,
         emissiveIntensity: 0.25,
       });
       const body = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.65, 0.65, 0.3, 16),
+        new THREE.CylinderGeometry(0.65, 0.65, 0.35, 20),
         gearMat
       );
       body.position.y = 0.65;
 
-      // Lever arm indicator
+      // Calibrated torque arm with distance notches
       const arm = new THREE.Mesh(
-        new THREE.BoxGeometry(0.18, 0.18, 1.4),
+        new THREE.BoxGeometry(0.18, 0.18, 1.6),
         gearMat
       );
       arm.position.set(0, 0.85, 0);
 
-      g.add(plinth, body, arm);
+      // Calibrated Torque Indicator Dial Face (M = F . d)
+      const dialTex = getDialScaleTexture('MÔMEN LỰC', 'M', 0, 100, 'N.m');
+      const dial = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.65, 0.65),
+        new THREE.MeshBasicMaterial({ map: dialTex })
+      );
+      dial.rotation.x = -Math.PI / 2;
+      dial.position.set(0, 0.85, 0);
+
+      g.add(plinth, body, arm, dial);
       g.userData = { targetId: spec.id };
       this.rootGroup.add(g);
       this.interactableMeshes.push(body);

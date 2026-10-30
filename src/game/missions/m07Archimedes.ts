@@ -12,6 +12,7 @@ import {
 } from '../../types/missionSpec';
 import { createRadialShadowTexture } from '../track/proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
+import { createArchimedesApparatus } from './proceduralLabModels';
 
 const _raycaster = new THREE.Raycaster();
 const _ndcVec = new THREE.Vector2();
@@ -308,6 +309,12 @@ export class M07ArchimedesController implements IMissionController {
     water.rotation.x = -Math.PI / 2;
     water.position.set(0, 0.52, -5.5);
     this.rootGroup.add(water);
+
+    // Realistic Archimedes Overflow Can & Spring Dynamometer Demonstration Station
+    const { group: archDemo } = createArchimedesApparatus();
+    archDemo.position.set(0, 0.52, -7.0);
+    archDemo.scale.set(1.1, 1.1, 1.1);
+    this.rootGroup.add(archDemo);
   }
 
   private buildArchimedesNodes() {
@@ -323,35 +330,55 @@ export class M07ArchimedesController implements IMissionController {
       const pos = positions[idx];
       const g = new THREE.Group();
       g.position.set(pos[0], 0, pos[2]);
-      this.addShadow(g, 1.0, 1.0);
+      this.addShadow(g, 1.1, 1.1);
 
-      const plinth = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.7, 0.8, 0.4, 16),
-        new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 })
-      );
-      plinth.position.y = 0.2;
+      let body: THREE.Mesh;
 
-      // Floating buoy shape (cylinder + sphere cap)
-      const buoyMat = new THREE.MeshStandardMaterial({
-        color: spec.colorHex,
-        metalness: 0.6,
-        roughness: 0.3,
-        emissive: spec.colorHex,
-        emissiveIntensity: 0.3,
-      });
-      const body = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.45, 0.45, 1.0, 16),
-        buoyMat
-      );
-      body.position.y = 0.9;
+      if (spec.id === 'ARCH_OVERFLOW') {
+        // Authentic Overflow Can and Catch Beaker
+        const { group: overflowRig, submergedCylinder } = createArchimedesApparatus();
+        overflowRig.scale.set(0.65, 0.65, 0.65);
+        g.add(overflowRig);
+        body = submergedCylinder;
+      } else {
+        const plinth = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.7, 0.8, 0.4, 16),
+          new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 })
+        );
+        plinth.position.y = 0.2;
 
-      const topCap = new THREE.Mesh(
-        new THREE.SphereGeometry(0.45, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
-        buoyMat
-      );
-      topCap.position.y = 1.4;
+        // Floating buoy shape (cylinder + sphere cap + waterline stripe)
+        const buoyMat = new THREE.MeshStandardMaterial({
+          color: spec.colorHex,
+          metalness: 0.6,
+          roughness: 0.3,
+          emissive: spec.colorHex,
+          emissiveIntensity: 0.3,
+        });
+        const buoyCylinder = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.45, 0.45, 1.0, 16),
+          buoyMat
+        );
+        buoyCylinder.position.y = 0.9;
 
-      g.add(plinth, body, topCap);
+        const topCap = new THREE.Mesh(
+          new THREE.SphereGeometry(0.45, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+          buoyMat
+        );
+        topCap.position.y = 1.4;
+
+        // Realistic waterline marking ring
+        const waterline = new THREE.Mesh(
+          new THREE.TorusGeometry(0.46, 0.02, 6, 16),
+          new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+        );
+        waterline.rotation.x = Math.PI / 2;
+        waterline.position.y = 0.9;
+
+        g.add(plinth, buoyCylinder, topCap, waterline);
+        body = buoyCylinder;
+      }
+
       g.userData = { targetId: spec.id };
       this.rootGroup.add(g);
       this.interactableMeshes.push(body);

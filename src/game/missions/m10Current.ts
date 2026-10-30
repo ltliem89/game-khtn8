@@ -12,6 +12,7 @@ import {
 } from '../../types/missionSpec';
 import { createRadialShadowTexture } from '../track/proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
+import { createAnalogueLabMeter } from './proceduralLabModels';
 
 const _raycaster = new THREE.Raycaster();
 const _ndcVec = new THREE.Vector2();
@@ -302,30 +303,29 @@ export class M10CurrentController implements IMissionController {
 
       // Substation plinth
       const plinth = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.7, 0.85, 0.4, 16),
+        new THREE.CylinderGeometry(0.75, 0.85, 0.35, 16),
         new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 })
       );
-      plinth.position.y = 0.2;
+      plinth.position.y = 0.175;
 
-      // Ammeter dial housing (circular cylinder)
-      const meterMat = new THREE.MeshStandardMaterial({
-        color: spec.colorHex,
-        metalness: 0.7,
-        roughness: 0.2,
-        emissive: spec.colorHex,
-        emissiveIntensity: 0.25,
-      });
-      const meterMesh = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.65, 0.65, 0.35, 24),
-        meterMat
+      // Authentic Laboratory Moving-Coil Ammeter / Voltmeter
+      const isVoltmeterDistractor = !spec.isValidTarget;
+      const { group: meterRig, needle, setReadingValue } = createAnalogueLabMeter(
+        isVoltmeterDistractor ? 'voltmeter' : 'ammeter'
       );
-      meterMesh.position.y = 0.7;
+      meterRig.scale.set(0.65, 0.65, 0.65);
+      meterRig.position.y = 0.35;
 
-      // Wire connecting in series
+      const readingVal = spec.numericValue || 12;
+      setReadingValue(readingVal, isVoltmeterDistractor ? 15 : 3);
+
+      const meterMesh = meterRig.children[0] as THREE.Mesh;
+
+      // Series circuit connection copper wire
       const wirePoints = [
         new THREE.Vector3(-0.9, 0.2, 0),
-        new THREE.Vector3(-0.5, 0.6, 0),
-        new THREE.Vector3(0.5, 0.6, 0),
+        new THREE.Vector3(-0.5, 0.7, 0),
+        new THREE.Vector3(0.5, 0.7, 0),
         new THREE.Vector3(0.9, 0.2, 0),
       ];
       const wireGeo = new THREE.BufferGeometry().setFromPoints(wirePoints);
@@ -335,7 +335,7 @@ export class M10CurrentController implements IMissionController {
       });
       const wireCurve = new THREE.Line(wireGeo, wireMat);
 
-      g.add(plinth, meterMesh, wireCurve);
+      g.add(plinth, meterRig, wireCurve);
       g.userData = { targetId: spec.id };
       this.rootGroup.add(g);
       this.interactableMeshes.push(meterMesh);

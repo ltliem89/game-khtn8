@@ -1,5 +1,26 @@
 # Release Notes — JETBOT-SCI8
 
+## v1.3.0-scientific-fidelity (2026-10-31) — High-Fidelity Scientific 3D Apparatus Overhaul
+- **Dedicated Procedural Laboratory Model Suite (`proceduralLabModels.ts`)**:
+  - `createGraduatedCylinder`: Real borosilicate glass with hexagonal anti-roll base, pouring spout, high-res printed graduation ticks, fluid column with concave meniscus, and optional wire-suspended immersion rock ($V_{\text{vật}} = V_2 - V_1$).
+  - `createLabElectronicScale`: Laboratory electronic balance with stainless steel weigh pan, anti-vibration rubber feet, and animated LED digital display.
+  - `createSpecimenBlock`: Physically accurate PBR material blocks (brushed aluminium $D=2700\,\text{kg/m}^3$, pitted dark cast iron $D=7800\,\text{kg/m}^3$, reddish copper $D=8900\,\text{kg/m}^3$, distilled water $D=1000\,\text{kg/m}^3$) with stencilled density plates.
+  - `createHydraulicPressRig`: Heavy 4-pillar compression rig with chromed guide columns, hydraulic ram, interchangeable pressure feet (wide track sand shoe vs narrow stiletto chisel blade), Bourdon dial gauge ($p=F/S$), and compressible sand bed showing realistic indentation depressions.
+  - `createHydrostaticColumnRig`: Transparent acrylic hydrostatic tank with depth level markers ($2\,\text{m}, 5\,\text{m}, 8\,\text{m}$), submerged rubber membrane pressure sensor probe, and dual-limb U-tube manometer with liquid level differential $\Delta h = d \cdot h$.
+  - `createGantryCraneAssembly`: Heavy maritime industrial gantry crane with yellow-black hazard trusses, motorized trolley carriage, twin wire-rope pulleys, and suspended corrugated ISO shipping container.
+  - `createTorricelliBarometer`: Authentic Torricelli glass tube apparatus with silvery liquid mercury standing at $760\,\text{mmHg}$, Torricellian vacuum chamber, mercury cistern dish, and mm scale ruler.
+  - `createArchimedesApparatus`: Complete Eureka overflow can with discharge spout, catch beaker, and precision spring dynamometer with calibrated Newton scale ($0–5\,\text{N}$) and submerged metal cylinder.
+  - `createFulcrumLeverApparatus`: Hardened triangular steel prism fulcrum ($O$), graduated notched lever beam, irregular granite boulder load ($O_2$), and ergonomic effort handle ($O_1$).
+  - `createAnalogueLabMeter`: Moving-coil analogue ammeter and voltmeter in slanted Bakelite housings with high-res dial faces ("A" or "V"), anti-parallax mirror strips, red knife-edge needles, and knurled binding posts with thick copper leads.
+  - `createCalorimeterSetup`: Double-walled insulated calorimeter vessel with cork stopper, glass thermometer with red mercury capillary, coiled resistance heating element, stainless steel stirrer, and digital Joulemeter box with glowing LED readout.
+  - `createHeatConductionApparatus`: Copper conduction bar with alcohol burner and wax-held metal pins falling sequentially as heat conducts.
+  - `createThermalExpansionRig`: Gravesande ring & ball apparatus (brass ball suspended on chain passing through ring when cool and jamming when heated) and bimetallic thermostat strip curving over burner flame.
+  - `createTokamakMeltdownCore`: Giant tokamak fusion reactor with 8 concentric magnetic toroidal containment rings, superheated glowing plasma torus, and cryogenic coolant manifolds.
+- **Upgraded All 17 Campaign Mission & Boss Controllers**:
+  - Replaced all primitive placeholders in M02–M15 and B01–B03 with composite scientific apparatus.
+  - Zero runtime GC allocations maintained across all render loops.
+  - 100% typechecked (`tsc --noEmit`: 0 errors) and built (`vite build`: 586ms).
+
 ## v1.2.0-full-campaign (2026-10-30) — Full Autonomous Campaign Delivery
 - **Completed All 15 Learning Missions (M01–M15)**:
   - `M01_MASS`: The Mass Vault — Cargo Scan & NOVA-8 Precision Scale.

@@ -12,6 +12,12 @@ import {
 } from '../../types/missionSpec';
 import { createRadialShadowTexture } from '../track/proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
+import {
+  createTokamakMeltdownCore,
+  createAnalogueLabMeter,
+  createCalorimeterSetup,
+  createThermalExpansionRig,
+} from './proceduralLabModels';
 
 const _raycaster = new THREE.Raycaster();
 const _ndcVec = new THREE.Vector2();
@@ -296,123 +302,85 @@ export class B03CoreMeltdownController implements IMissionController {
 
   private buildGrandCoreChamber() {
     this.grandCoreRings = new THREE.Group();
-    this.grandCoreRings.position.set(0, 5.0, -9.0);
+    this.grandCoreRings.position.set(0, 1.0, -9.0);
 
-    const outerRing = new THREE.Mesh(
-      new THREE.TorusGeometry(4.5, 0.45, 16, 64),
-      new THREE.MeshStandardMaterial({
-        color: 0x38bdf8,
-        metalness: 0.85,
-        roughness: 0.15,
-        emissive: 0x0284c7,
-        emissiveIntensity: 0.4,
-      })
-    );
+    // Realistic Tokamak Fusion Reactor Core
+    const { group: tokamakRig, plasmaCore } = createTokamakMeltdownCore();
+    tokamakRig.scale.set(1.3, 1.3, 1.3);
+    this.grandCoreRings.add(tokamakRig);
+    this.coreSphere = plasmaCore;
 
-    const innerRing = new THREE.Mesh(
-      new THREE.TorusGeometry(3.0, 0.35, 16, 48),
-      new THREE.MeshStandardMaterial({
-        color: 0x8b5cf6,
-        metalness: 0.8,
-        roughness: 0.2,
-      })
-    );
-
-    const core = new THREE.Mesh(
-      new THREE.SphereGeometry(2.0, 32, 32),
-      new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        emissive: 0x38bdf8,
-        emissiveIntensity: 0.7,
-        roughness: 0.1,
-      })
-    );
-    this.coreSphere = core;
-
-    this.grandCoreRings.add(outerRing, innerRing, core);
     this.rootGroup.add(this.grandCoreRings);
   }
 
   private buildSubsystemPillars() {
-    // 1. Voltage Pillar (Far Left)
+    // 1. Voltage Pillar (Far Left - Voltmeter Apparatus)
     const voltG = new THREE.Group();
     voltG.position.set(-6.2, 0, -3.5);
     this.addShadow(voltG, 1.5, 1.5);
-    const voltM = new THREE.Mesh(
-      new THREE.BoxGeometry(1.2, 1.8, 1.2),
-      new THREE.MeshStandardMaterial({
-        color: 0x8b5cf6,
-        metalness: 0.8,
-        emissive: 0x8b5cf6,
-        emissiveIntensity: 0.3,
-      })
-    );
-    voltM.position.y = 0.9;
+
+    const { group: voltRig, setReadingValue } = createAnalogueLabMeter('voltmeter');
+    voltRig.scale.set(0.7, 0.7, 0.7);
+    voltRig.position.y = 0.3;
+    setReadingValue(220, 250);
+
+    const voltM = voltRig.children[0] as THREE.Mesh;
     voltM.userData = { targetId: 'B03_P1_VOLT' };
-    voltG.add(voltM);
+    voltG.add(voltRig);
     this.voltModule = voltM;
     this.rootGroup.add(voltG);
     this.interactableMeshes.push(voltM);
 
-    // 2. Joule Pillar (Mid Left)
+    // 2. Joule Pillar (Mid Left - Calorimeter Setup)
     const jouleG = new THREE.Group();
     jouleG.position.set(-3.2, 0, -2.5);
     this.addShadow(jouleG, 1.5, 1.5);
-    const jouleM = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.7, 0.75, 1.8, 16),
-      new THREE.MeshStandardMaterial({
-        color: 0x10b981,
-        metalness: 0.8,
-        emissive: 0x10b981,
-        emissiveIntensity: 0.3,
-      })
-    );
-    jouleM.position.y = 0.9;
+
+    const { group: jouleRig, updateJoules } = createCalorimeterSetup();
+    jouleRig.scale.set(0.65, 0.65, 0.65);
+    updateJoules(4200);
+
+    const jouleM = jouleRig.children[0] as THREE.Mesh;
     jouleM.userData = { targetId: 'B03_P2_JOULE' };
-    jouleG.add(jouleM);
+    jouleG.add(jouleRig);
     this.jouleModule = jouleM;
     this.rootGroup.add(jouleG);
     this.interactableMeshes.push(jouleM);
 
-    // 3. Routing Pillar (Mid Right)
+    // 3. Routing Pillar (Mid Right - Finned Geothermal Heat Exchanger)
     const routeG = new THREE.Group();
     routeG.position.set(3.2, 0, -2.5);
     this.addShadow(routeG, 1.5, 1.5);
-    const routeM = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.7, 0.75, 1.8, 8),
-      new THREE.MeshStandardMaterial({
-        color: 0xf97316,
-        metalness: 0.8,
-        emissive: 0xf97316,
-        emissiveIntensity: 0.3,
-      })
-    );
-    routeM.position.y = 0.9;
-    routeM.userData = { targetId: 'B03_P3_ROUTING' };
-    routeG.add(routeM);
-    this.routingModule = routeM;
-    this.rootGroup.add(routeG);
-    this.interactableMeshes.push(routeM);
 
-    // 4. Expansion Pillar (Far Right)
+    const heatPipe = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.3, 0.3, 1.8, 16),
+      new THREE.MeshStandardMaterial({ color: 0xd97706, metalness: 0.95, roughness: 0.2 })
+    );
+    heatPipe.position.y = 0.9;
+    const finMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.9 });
+    for (let y = 0.3; y <= 1.5; y += 0.2) {
+      const fin = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.65, 0.03, 16), finMat);
+      fin.position.y = y;
+      routeG.add(fin);
+    }
+    heatPipe.userData = { targetId: 'B03_P3_ROUTING' };
+    routeG.add(heatPipe);
+    this.routingModule = heatPipe;
+    this.rootGroup.add(routeG);
+    this.interactableMeshes.push(heatPipe);
+
+    // 4. Expansion Pillar (Far Right - Gravesande Ring & Ball Rig)
     const expG = new THREE.Group();
     expG.position.set(6.2, 0, -3.5);
     this.addShadow(expG, 1.5, 1.5);
-    const expM = new THREE.Mesh(
-      new THREE.BoxGeometry(1.2, 1.8, 1.2),
-      new THREE.MeshStandardMaterial({
-        color: 0xf59e0b,
-        metalness: 0.8,
-        emissive: 0xf59e0b,
-        emissiveIntensity: 0.3,
-      })
-    );
-    expM.position.y = 0.9;
-    expM.userData = { targetId: 'B03_P4_EXPANSION' };
-    expG.add(expM);
-    this.expansionModule = expM;
+
+    const { group: expRig, animatedPart } = createThermalExpansionRig('GRAVESANDE');
+    expRig.scale.set(0.65, 0.65, 0.65);
+    animatedPart.userData = { targetId: 'B03_P4_EXPANSION' };
+    expG.add(expRig);
+    this.expansionModule = animatedPart;
     this.rootGroup.add(expG);
-    this.interactableMeshes.push(expM);
+    this.interactableMeshes.push(animatedPart);
 
     // 5. Restart Console (Center Front)
     const restG = new THREE.Group();
