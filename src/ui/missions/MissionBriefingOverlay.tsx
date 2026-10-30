@@ -33,9 +33,20 @@ export const MissionBriefingOverlay: React.FC<MissionBriefingOverlayProps> = ({
   onStartM01Mission,
   onSkipBriefingToDrive,
 }) => {
+  React.useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Enter' || e.code === 'Space') {
+        e.preventDefault();
+        onStartM01Mission();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onStartM01Mission]);
+
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto pointer-events-auto">
-      <div className="w-full max-w-4xl rounded-2xl bg-[#0b1322]/95 border border-sky-500/40 shadow-2xl overflow-hidden text-slate-100 my-auto">
+    <div className="fixed inset-0 z-30 flex items-center justify-center p-4 bg-[#070c17]/90 overflow-y-auto pointer-events-auto">
+      <div className="w-full max-w-4xl rounded-2xl bg-[#0b1322]/96 border border-sky-500/40 shadow-2xl overflow-hidden text-slate-100 my-auto">
         {/* Top Story & Mission Header */}
         <div className="px-6 py-5 bg-gradient-to-r from-sky-950/90 via-slate-900 to-amber-950/40 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4">
           <div>

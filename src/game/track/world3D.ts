@@ -126,6 +126,8 @@ export class World3DEngine {
   private jetbotConfig: JetBotConfig;
   private currentLookAt = new THREE.Vector3(0, 1, 10);
   private offLaneBeepCooldown = 0;
+  private hitstopTimer = 0;
+  private cameraShakeIntensity = 0;
 
   constructor(
     container: HTMLElement,
@@ -211,10 +213,21 @@ export class World3DEngine {
       this.isSoftwareGl,
       this.maxAnisotropy
     );
+    this.m01Vault.setImpactFeelCallback((hitstopSec, shake) => {
+      this.triggerImpactFeel(hitstopSec, shake);
+    });
     this.scene.add(this.m01Vault.rootGroup);
 
     window.addEventListener('resize', this.handleResize);
     this.startLoop();
+  }
+
+  public triggerImpactFeel(hitstopSec: number, shakeIntensity: number) {
+    this.hitstopTimer = Math.max(this.hitstopTimer, hitstopSec);
+    this.cameraShakeIntensity = Math.min(
+      0.65,
+      this.cameraShakeIntensity + shakeIntensity
+    );
   }
 
   public setDrivingScoreForHud(score: number) {
@@ -1006,6 +1019,13 @@ export class World3DEngine {
   }
 
   private updateSimulation(dt: number, elapsed: number) {
+    // Brief 30-80ms simulation hitstop on heavy impacts
+    if (this.hitstopTimer > 0) {
+      this.hitstopTimer = Math.max(0, this.hitstopTimer - dt);
+      this.updateCameraChoreography(dt, elapsed);
+      return;
+    }
+
     // Rotate station beacons gently
     for (let i = 0; i < this.stationAnchors.length; i++) {
       const anchor = this.stationAnchors[i];
@@ -1345,11 +1365,12 @@ export class World3DEngine {
           this.physics.position.z + cosH * 0.6
         );
         if (this.activeStationIndex === 0) {
-          const focusPos = this.m01Vault.getScannerBayFocusPosition();
+          this.m01Vault.getScannerBayFocusPosition(_scratchVecA);
+          const hudSnap = this.m01Vault.getHudSnapshot(this.currentDrivingScore);
           _camLookAt.set(
-            focusPos.x + this.m01Vault.getHudSnapshot(this.currentDrivingScore).reticleX * 4.5,
-            focusPos.y + this.m01Vault.getHudSnapshot(this.currentDrivingScore).reticleY * 2.2,
-            focusPos.z
+            _scratchVecA.x + hudSnap.reticleX * 4.5,
+            _scratchVecA.y + hudSnap.reticleY * 2.2,
+            _scratchVecA.z
           );
         } else {
           _camLookAt.set(
@@ -1378,6 +1399,19 @@ export class World3DEngine {
 
     const dampFactor = 1 - Math.exp(-6.5 * dt);
     this.camera.position.lerp(_camTargetPos, dampFactor);
+
+    // Decaying camera shake on impacts, gate unlocks, or boost pads
+    if (this.cameraShakeIntensity > 0.001) {
+      this.camera.position.x +=
+        (Math.random() - 0.5) * this.cameraShakeIntensity;
+      this.camera.position.y +=
+        (Math.random() - 0.5) * this.cameraShakeIntensity * 0.7;
+      this.cameraShakeIntensity = Math.max(
+        0,
+        this.cameraShakeIntensity - dt * 1.8
+      );
+    }
+
     this.currentLookAt.lerp(_camLookAt, dampFactor);
     this.camera.lookAt(this.currentLookAt);
   }

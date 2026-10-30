@@ -159,6 +159,72 @@ Hãy đóng vai trợ lý robot khảo sát JetBot AI trong phòng thí nghiệm
     }
   });
 
+  // Endpoint 3: Music Generation with Lyria (lyria-3-clip-preview for 30s clips or lyria-3-pro-preview for full tracks)
+  app.post('/api/ai/generate-music', async (req, res) => {
+    try {
+      const { prompt, mode } = req.body;
+      const ai = getAiClient();
+      if (!ai) {
+        return res.status(503).json({
+          error:
+            'Chưa cấu hình GEMINI_API_KEY trả phí cho Lyria. Hệ thống đang phát nhạc nền Web Audio Synth 3 kênh tích hợp sẵn.',
+        });
+      }
+
+      const modelName =
+        mode === 'full' ? 'lyria-3-pro-preview' : 'lyria-3-clip-preview';
+      const musicPrompt =
+        prompt ||
+        'Generate a 30-second futuristic sci-fi electronic soundtrack for a physics laboratory rover mission, upbeat 120 BPM.';
+
+      const responseStream = await ai.models.generateContentStream({
+        model: modelName,
+        contents: musicPrompt,
+      });
+
+      const audioChunks: Buffer[] = [];
+      let lyrics = '';
+      let mimeType = 'audio/mpeg';
+
+      for await (const chunk of responseStream) {
+        const parts = chunk.candidates?.[0]?.content?.parts;
+        if (!parts) continue;
+        for (const part of parts) {
+          if (part.inlineData?.data) {
+            if (audioChunks.length === 0 && part.inlineData.mimeType) {
+              mimeType = part.inlineData.mimeType;
+            }
+            audioChunks.push(Buffer.from(part.inlineData.data, 'base64'));
+          }
+          if (part.text) {
+            lyrics += part.text;
+          }
+        }
+      }
+
+      if (audioChunks.length === 0) {
+        return res.status(500).json({
+          error: 'Mô hình Lyria không trả về dữ liệu âm thanh.',
+        });
+      }
+
+      const audioBase64 = Buffer.concat(audioChunks).toString('base64');
+      const audioDataUrl = `data:${mimeType};base64,${audioBase64}`;
+      return res.json({
+        audioDataUrl,
+        lyrics,
+        model: modelName,
+      });
+    } catch (error: any) {
+      console.error('Lyria Music Generation Error:', error);
+      return res.status(500).json({
+        error:
+          error?.message ||
+          'Không thể tạo nhạc bằng Lyria (cần API Key trả phí). Đã chuyển sang bộ tổng hợp nhạc Web Audio Synth.',
+      });
+    }
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

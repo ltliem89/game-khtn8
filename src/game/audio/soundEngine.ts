@@ -14,11 +14,31 @@ class SoundEngine {
   private bgmTimer: number | null = null;
   private bgmStep: number = 0;
   private activeSpeechCancel: (() => void) | null = null;
+  private generatedAudioEl: HTMLAudioElement | null = null;
 
   constructor() {
     try {
       const savedMute = localStorage.getItem('khtn8_jetbot_muted');
       if (savedMute === 'true') this.muted = true;
+    } catch {
+      // ignore
+    }
+  }
+
+  public playGeneratedMusicDataUrl(audioDataUrl: string) {
+    this.stopBgm();
+    if (this.generatedAudioEl) {
+      this.generatedAudioEl.pause();
+      this.generatedAudioEl = null;
+    }
+    if (this.muted || typeof window === 'undefined') return;
+    try {
+      const audio = new Audio(audioDataUrl);
+      audio.loop = true;
+      audio.volume = 0.45;
+      this.generatedAudioEl = audio;
+      this.bgmPlaying = true;
+      audio.play().catch(() => {});
     } catch {
       // ignore
     }
@@ -105,6 +125,10 @@ class SoundEngine {
     if (this.bgmTimer !== null) {
       clearTimeout(this.bgmTimer);
       this.bgmTimer = null;
+    }
+    if (this.generatedAudioEl) {
+      this.generatedAudioEl.pause();
+      this.generatedAudioEl = null;
     }
   }
 

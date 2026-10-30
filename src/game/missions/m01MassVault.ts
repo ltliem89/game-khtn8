@@ -10,11 +10,17 @@ import {
   M01RunEvidence,
   PerformanceTier,
 } from '../../types/missionSpec';
+import { createRadialShadowTexture } from '../track/proceduralModels';
 import { soundEngine } from '../audio/soundEngine';
 
+// Pre-allocated scratch math objects (Zero GC inside requestAnimationFrame)
 const _raycaster = new THREE.Raycaster();
 const _ndcVec = new THREE.Vector2();
 const _projVec = new THREE.Vector3();
+const _worldScratchA = new THREE.Vector3();
+const _worldScratchB = new THREE.Vector3();
+const _upAxis = new THREE.Vector3(0, 1, 0);
+const _targetLerpVec = new THREE.Vector3();
 
 interface CrateMeshNode {
   spec: CargoCrateSpec;
@@ -23,18 +29,28 @@ interface CrateMeshNode {
   bodyMesh: THREE.Mesh;
   outlineMesh: THREE.Mesh;
   pulseRingMesh: THREE.Mesh;
+  beaconLightMesh: THREE.Mesh;
   basePosition: THREE.Vector3;
   conveyorSlotIndex: number;
+  squashTimer: number;
+  hitFlashTimer: number;
 }
 
 interface OverheadCraneHazard {
   group: THREE.Group;
-  containerMesh: THREE.Mesh;
+  carriageGroup: THREE.Group;
   telegraphRing: THREE.Mesh;
   centerPos: THREE.Vector3;
   cycleOffset: number;
   isDangerDown: boolean;
   warnedThisCycle: boolean;
+}
+
+interface PooledPulseBurst {
+  mesh: THREE.Mesh;
+  active: boolean;
+  age: number;
+  maxAge: number;
 }
 
 export class M01MassVaultController {
@@ -45,21 +61,25 @@ export class M01MassVaultController {
 
   private isSoftwareGl = false;
   private maxAnisotropy = 1;
+  private shadowTex: THREE.CanvasTexture | null = null;
+  private bumpTex: THREE.CanvasTexture | null = null;
 
   private crates: CrateMeshNode[] = [];
   private interactableMeshes: THREE.Object3D[] = [];
   private craneHazards: OverheadCraneHazard[] = [];
   private conveyorSlats: THREE.Mesh[] = [];
+  private conveyorRollers: THREE.Mesh[] = [];
+  private pulseBursts: PooledPulseBurst[] = [];
 
   private scaleCanvas: HTMLCanvasElement | null = null;
   private scaleTexture: THREE.CanvasTexture | null = null;
   private lastScaleText = '';
 
-  private shortcutGateLeft: THREE.Mesh | null = null;
-  private shortcutGateRight: THREE.Mesh | null = null;
-  private exitGateLeft: THREE.Mesh | null = null;
-  private exitGateRight: THREE.Mesh | null = null;
-  private exitBeaconMat: THREE.MeshBasicMaterial | null = null;
+  private shortcutGateLeft: THREE.Group | null = null;
+  private shortcutGateRight: THREE.Group | null = null;
+  private exitGateLeft: THREE.Group | null = null;
+  private exitGateRight: THREE.Group | null = null;
+  private exitBeaconMat: THREE.MeshStandardMaterial | null = null;
   private holoCrateMesh: THREE.Group | null = null;
 
   private active = true;
@@ -96,12 +116,23 @@ export class M01MassVaultController {
   private tieredHintVi: string | null = null;
   private collisionPenaltyCooldown = 0;
 
+  // Game feel callbacks (hitstop + decaying camera shake)
+  private pendingImpactCallback:
+    | ((hitstopSec: number, shakeIntensity: number) => void)
+    | null = null;
+
   private evidence: M01RunEvidence;
 
   constructor(isSoftwareGl: boolean, maxAnisotropy: number) {
     this.isSoftwareGl = isSoftwareGl;
     this.maxAnisotropy = maxAnisotropy;
     this.evidence = this.createFreshEvidence();
+  }
+
+  public setImpactFeelCallback(
+    cb: (hitstopSec: number, shakeIntensity: number) => void
+  ) {
+    this.pendingImpactCallback = cb;
   }
 
   private createFreshEvidence(): M01RunEvidence {
@@ -141,6 +172,32 @@ export class M01MassVaultController {
     };
   }
 
+  private createIndustrialBumpTexture(): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(0, 0, 128, 128);
+    ctx.strokeStyle = '#9a9a9a';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 128; i += 16) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i, 128);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, i);
+      ctx.lineTo(128, i);
+      ctx.stroke();
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(4, 4);
+    return tex;
+  }
+
   public setDifficultyAndTier(
     difficulty: DifficultyLayer,
     tier: PerformanceTier
@@ -173,16 +230,8 @@ export class M01MassVaultController {
     return this.exitGateOpen;
   }
 
-  public getScannerBayFocusPosition(): THREE.Vector3 {
-    return this.localToWorld(0, 1.5, -1.5);
-  }
-
-  public getCrateWorldPosition(crateId: string): THREE.Vector3 | null {
-    const found = this.crates.find((c) => c.spec.id === crateId);
-    if (!found) return null;
-    const pos = new THREE.Vector3();
-    found.group.getWorldPosition(pos);
-    return pos;
+  public getScannerBayFocusPosition(outVec: THREE.Vector3): THREE.Vector3 {
+    return this.localToWorldInto(0, 1.5, -1.5, outVec);
   }
 
   public selectAndInspectCrateById(crateId: string) {
@@ -193,11 +242,16 @@ export class M01MassVaultController {
     this.triggerSciencePulseOnAimed();
   }
 
-  private localToWorld(lx: number, ly: number, lz: number): THREE.Vector3 {
-    return new THREE.Vector3()
+  private localToWorldInto(
+    lx: number,
+    ly: number,
+    lz: number,
+    target: THREE.Vector3
+  ): THREE.Vector3 {
+    return target
       .copy(this.stationCenter)
       .addScaledVector(this.stationRight, lx)
-      .addScaledVector(new THREE.Vector3(0, 1, 0), ly)
+      .addScaledVector(_upAxis, ly)
       .addScaledVector(this.stationTangent, lz);
   }
 
@@ -218,11 +272,20 @@ export class M01MassVaultController {
       this.stationTangent.z
     );
 
-    // Reset runtime mission state for fresh build
+    if (!this.shadowTex) {
+      this.shadowTex = createRadialShadowTexture();
+    }
+    if (!this.bumpTex) {
+      this.bumpTex = this.createIndustrialBumpTexture();
+    }
+
+    // Reset runtime mission state
     this.crates = [];
     this.interactableMeshes = [];
     this.craneHazards = [];
     this.conveyorSlats = [];
+    this.conveyorRollers = [];
+    this.pulseBursts = [];
     this.loadedMassKg = 0;
     this.loadedCratesCount = 0;
     this.wrongAttempts = 0;
@@ -232,20 +295,12 @@ export class M01MassVaultController {
     this.checkpointId = 'CP0';
     this.evidence = this.createFreshEvidence();
 
-    // 1. Industrial Megastructure Columns, Roof Trusses & Skylight Volumetric Shafts
     this.buildWarehouseMegastructure();
-
-    // 2. Sorting Lanes A / B / C & Overhead Crane Hazard with 2s Floor Telegraph Ring
     this.buildSortingLanesAndHazards();
-
-    // 3. Scanner Bay (CP1), Electronic Balance Platform & Digital Scale Readout
     this.buildScannerBayAndElectronicScale();
-
-    // 4. Moving Conveyor Belt (CP2) & 5 Interactive Cargo Crates
     this.buildConveyorAndCargoCrates();
-
-    // 5. Shortcut Maintenance Gate + Bonus Holo-Crate & Main Exit Gate
     this.buildShortcutAndExitGates();
+    this.buildPooledPulseBursts();
 
     this.updateScaleDisplay(
       'CÂN ĐIỆN TỬ NOVA-8',
@@ -254,11 +309,34 @@ export class M01MassVaultController {
     );
   }
 
+  private addContactShadow(parent: THREE.Group, radiusX: number, radiusZ: number) {
+    if (!this.shadowTex) return;
+    const shadowMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(radiusX * 2, radiusZ * 2),
+      new THREE.MeshBasicMaterial({
+        map: this.shadowTex,
+        transparent: true,
+        opacity: 0.55,
+        depthWrite: false,
+      })
+    );
+    shadowMesh.rotation.x = -Math.PI / 2;
+    shadowMesh.position.y = 0.02;
+    parent.add(shadowMesh);
+  }
+
   private buildWarehouseMegastructure() {
     const steelMat = new THREE.MeshStandardMaterial({
       color: 0x1e293b,
-      metalness: 0.78,
-      roughness: 0.32,
+      metalness: 0.82,
+      roughness: 0.28,
+      bumpMap: this.bumpTex,
+      bumpScale: 0.015,
+    });
+    const flangeMat = new THREE.MeshStandardMaterial({
+      color: 0x334155,
+      metalness: 0.72,
+      roughness: 0.35,
     });
     const hazardStripeMat = new THREE.MeshStandardMaterial({
       color: 0xf59e0b,
@@ -268,28 +346,51 @@ export class M01MassVaultController {
       roughness: 0.45,
     });
 
-    // 6 pairs of steel I-beam columns spanning z = -34 to z = +8
     const zOffsets = [-34, -26, -18, -10, -2, 6];
     const xSpan = 14.2;
 
+    // Composite 6-part steel I-beam columns & roof trusses
     zOffsets.forEach((zOff, idx) => {
       [-xSpan, xSpan].forEach((xPos) => {
-        const col = new THREE.Mesh(
-          new THREE.BoxGeometry(0.75, 11.5, 0.75),
+        const colGroup = new THREE.Group();
+        colGroup.position.set(xPos, 0, zOff);
+        this.addContactShadow(colGroup, 1.2, 1.2);
+
+        const webCore = new THREE.Mesh(
+          new THREE.BoxGeometry(0.45, 11.4, 0.72),
           steelMat
         );
-        col.position.set(xPos, 5.75, zOff);
-        this.rootGroup.add(col);
+        webCore.position.y = 5.7;
 
-        const baseShoe = new THREE.Mesh(
-          new THREE.BoxGeometry(1.15, 0.7, 1.15),
+        const frontFlange = new THREE.Mesh(
+          new THREE.BoxGeometry(0.82, 11.4, 0.16),
+          flangeMat
+        );
+        frontFlange.position.set(0, 5.7, 0.32);
+
+        const backFlange = new THREE.Mesh(
+          new THREE.BoxGeometry(0.82, 11.4, 0.16),
+          flangeMat
+        );
+        backFlange.position.set(0, 5.7, -0.32);
+
+        const basePlinth = new THREE.Mesh(
+          new THREE.BoxGeometry(1.22, 0.65, 1.22),
           hazardStripeMat
         );
-        baseShoe.position.set(xPos, 0.35, zOff);
-        this.rootGroup.add(baseShoe);
+        basePlinth.position.y = 0.325;
+
+        const kneeBrace = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.14, 0.14, 2.8, 8),
+          flangeMat
+        );
+        kneeBrace.position.set(xPos > 0 ? -0.95 : 0.95, 10.1, 0);
+        kneeBrace.rotation.z = xPos > 0 ? 0.65 : -0.65;
+
+        colGroup.add(webCore, frontFlange, backFlange, basePlinth, kneeBrace);
+        this.rootGroup.add(colGroup);
       });
 
-      // Overhead roof truss beam
       const roofBeam = new THREE.Mesh(
         new THREE.BoxGeometry(xSpan * 2 + 1.4, 0.65, 0.65),
         steelMat
@@ -297,23 +398,27 @@ export class M01MassVaultController {
       roofBeam.position.set(0, 11.2, zOff);
       this.rootGroup.add(roofBeam);
 
-      // Amber warning beacon on alternating trusses
       if (idx % 2 === 0) {
-        const beacon = new THREE.Mesh(
-          new THREE.SphereGeometry(0.26, 12, 12),
+        const beaconHousing = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.32, 0.38, 0.25, 12),
+          flangeMat
+        );
+        beaconHousing.position.set(0, 10.8, zOff);
+        const beaconBulb = new THREE.Mesh(
+          new THREE.SphereGeometry(0.24, 12, 12),
           new THREE.MeshBasicMaterial({ color: 0xfbbf24 })
         );
-        beacon.position.set(0, 10.75, zOff);
-        this.rootGroup.add(beacon);
+        beaconBulb.position.y = -0.15;
+        beaconHousing.add(beaconBulb);
+        this.rootGroup.add(beaconHousing);
       }
 
-      // Skylight volumetric light shaft (translucent cone)
       if (!this.isSoftwareGl && idx % 2 === 1) {
         const shaftGeo = new THREE.ConeGeometry(4.2, 11.0, 16, 1, true);
         const shaftMat = new THREE.MeshBasicMaterial({
           color: 0x38bdf8,
           transparent: true,
-          opacity: 0.055,
+          opacity: 0.05,
           side: THREE.DoubleSide,
           depthWrite: false,
         });
@@ -323,32 +428,50 @@ export class M01MassVaultController {
       }
     });
 
-    // Side warehouse shelving & stacked storage containers (Midground layer)
+    // Composite multi-part industrial storage containers along walls
     const containerColors = [0x0369a1, 0x0f766e, 0x334155, 0xb45309];
     for (let i = 0; i < 4; i++) {
       const cMat = new THREE.MeshStandardMaterial({
         color: containerColors[i % containerColors.length],
-        metalness: 0.55,
-        roughness: 0.42,
+        metalness: 0.58,
+        roughness: 0.38,
+        bumpMap: this.bumpTex,
+        bumpScale: 0.02,
       });
-      const leftStack = new THREE.Mesh(
-        new THREE.BoxGeometry(2.6, 2.5, 5.2),
-        cMat
-      );
-      leftStack.position.set(-12.2, 1.25 + (i % 2) * 2.55, -28 + i * 7.5);
-      this.rootGroup.add(leftStack);
+      const frameTrimMat = new THREE.MeshStandardMaterial({
+        color: 0x0f172a,
+        metalness: 0.8,
+        roughness: 0.25,
+      });
 
-      const rightStack = new THREE.Mesh(
-        new THREE.BoxGeometry(2.6, 2.5, 5.2),
-        cMat
-      );
-      rightStack.position.set(12.2, 1.25, -26 + i * 7.5);
-      this.rootGroup.add(rightStack);
+      [-12.2, 12.2].forEach((sideX, sIdx) => {
+        const contGroup = new THREE.Group();
+        contGroup.position.set(sideX, 0, -27 + i * 7.5 + sIdx * 1.2);
+        this.addContactShadow(contGroup, 1.8, 3.0);
+
+        const hull = new THREE.Mesh(
+          new THREE.BoxGeometry(2.5, 2.4, 5.0),
+          cMat
+        );
+        hull.position.y = 1.2;
+        const topFrame = new THREE.Mesh(
+          new THREE.BoxGeometry(2.62, 0.18, 5.12),
+          frameTrimMat
+        );
+        topFrame.position.y = 2.42;
+        const endCap = new THREE.Mesh(
+          new THREE.BoxGeometry(2.58, 2.3, 0.22),
+          frameTrimMat
+        );
+        endCap.position.set(0, 1.2, 2.48);
+
+        contGroup.add(hull, topFrame, endCap);
+        this.rootGroup.add(contGroup);
+      });
     }
   }
 
   private buildSortingLanesAndHazards() {
-    // Sorting Lane floor chevrons (z = -28 to z = -14)
     const laneColors = [0x38bdf8, 0xfbbf24, 0x34d399];
     [-3.2, 0, 3.2].forEach((laneX, laneIdx) => {
       const strip = new THREE.Mesh(
@@ -365,7 +488,7 @@ export class M01MassVaultController {
       this.rootGroup.add(strip);
     });
 
-    // 2 Overhead Gantry Crane Hazards with 2-second Amber Floor Telegraph Rings
+    // 2 Composite 6-part Overhead Gantry Crane Hazards with 2-second Amber Floor Telegraph Rings
     const hazardPositions = [
       new THREE.Vector3(-2.4, 0, -24.5),
       new THREE.Vector3(2.4, 0, -17.5),
@@ -374,28 +497,65 @@ export class M01MassVaultController {
     hazardPositions.forEach((hPos, idx) => {
       const hGroup = new THREE.Group();
       hGroup.position.copy(hPos);
+      this.addContactShadow(hGroup, 1.7, 1.7);
 
-      const containerMat = new THREE.MeshStandardMaterial({
-        color: 0xd97706,
-        metalness: 0.65,
-        roughness: 0.35,
-      });
-      const containerMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(2.5, 1.8, 2.5),
-        containerMat
+      const carriageGroup = new THREE.Group();
+      carriageGroup.position.y = 5.5;
+
+      const containerBody = new THREE.Mesh(
+        new THREE.BoxGeometry(2.45, 1.65, 2.45),
+        new THREE.MeshStandardMaterial({
+          color: 0xd97706,
+          metalness: 0.65,
+          roughness: 0.32,
+          bumpMap: this.bumpTex,
+          bumpScale: 0.02,
+        })
       );
-      containerMesh.position.y = 5.5;
-      hGroup.add(containerMesh);
 
-      const cable = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.06, 0.06, 6.0, 8),
+      const spreaderBar = new THREE.Mesh(
+        new THREE.BoxGeometry(2.65, 0.22, 0.55),
+        new THREE.MeshStandardMaterial({
+          color: 0x1e293b,
+          metalness: 0.85,
+          roughness: 0.22,
+        })
+      );
+      spreaderBar.position.y = 0.95;
+
+      const cableLeft = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.05, 0.05, 6.0, 8),
         new THREE.MeshBasicMaterial({ color: 0x94a3b8 })
       );
-      cable.position.y = 3.0;
-      containerMesh.add(cable);
+      cableLeft.position.set(-0.85, 3.8, 0);
+
+      const cableRight = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.05, 0.05, 6.0, 8),
+        new THREE.MeshBasicMaterial({ color: 0x94a3b8 })
+      );
+      cableRight.position.set(0.85, 3.8, 0);
+
+      const cornerBumper = new THREE.Mesh(
+        new THREE.BoxGeometry(2.58, 0.24, 2.58),
+        new THREE.MeshStandardMaterial({
+          color: 0xfbbf24,
+          emissive: 0xd97706,
+          emissiveIntensity: 0.35,
+        })
+      );
+      cornerBumper.position.y = -0.75;
+
+      carriageGroup.add(
+        containerBody,
+        spreaderBar,
+        cableLeft,
+        cableRight,
+        cornerBumper
+      );
+      hGroup.add(carriageGroup);
 
       const telegraphRing = new THREE.Mesh(
-        new THREE.RingGeometry(1.1, 1.65, 28),
+        new THREE.RingGeometry(1.15, 1.7, 28),
         new THREE.MeshBasicMaterial({
           color: 0xf59e0b,
           side: THREE.DoubleSide,
@@ -410,7 +570,7 @@ export class M01MassVaultController {
       this.rootGroup.add(hGroup);
       this.craneHazards.push({
         group: hGroup,
-        containerMesh,
+        carriageGroup,
         telegraphRing,
         centerPos: hPos.clone(),
         cycleOffset: idx * 3.1,
@@ -421,7 +581,6 @@ export class M01MassVaultController {
   }
 
   private buildScannerBayAndElectronicScale() {
-    // Scanner Bay Floor Pad at z = -8.5 (CP1)
     const padRing = new THREE.Mesh(
       new THREE.RingGeometry(3.6, 4.25, 36),
       new THREE.MeshBasicMaterial({
@@ -448,36 +607,52 @@ export class M01MassVaultController {
     padFill.position.set(0, 0.03, -8.5);
     this.rootGroup.add(padFill);
 
-    // Electronic Weighing Platform & Digital Scale Display Board at (x = -7.8, z = -4.5)
+    // Composite 7-part Electronic Weighing Platform & Digital Scale Readout
     const scaleGroup = new THREE.Group();
     scaleGroup.position.set(-7.8, 0, -4.5);
     scaleGroup.rotation.y = 0.42;
+    this.addContactShadow(scaleGroup, 2.5, 2.5);
 
-    const platform = new THREE.Mesh(
-      new THREE.BoxGeometry(3.8, 0.35, 3.8),
+    const baseChassis = new THREE.Mesh(
+      new THREE.BoxGeometry(3.9, 0.28, 3.9),
       new THREE.MeshStandardMaterial({
         color: 0x0f172a,
-        metalness: 0.8,
-        roughness: 0.25,
+        metalness: 0.82,
+        roughness: 0.24,
       })
     );
-    platform.position.y = 0.18;
-    scaleGroup.add(platform);
+    baseChassis.position.y = 0.14;
 
-    const rim = new THREE.Mesh(
-      new THREE.BoxGeometry(4.0, 0.12, 4.0),
+    const loadCellPlate = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.75, 1.85, 0.16, 24),
+      new THREE.MeshStandardMaterial({
+        color: 0x334155,
+        metalness: 0.75,
+        roughness: 0.28,
+        bumpMap: this.bumpTex,
+        bumpScale: 0.01,
+      })
+    );
+    loadCellPlate.position.y = 0.36;
+
+    const sensorRing = new THREE.Mesh(
+      new THREE.TorusGeometry(1.82, 0.06, 10, 28),
       new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
     );
-    rim.position.y = 0.36;
-    scaleGroup.add(rim);
+    sensorRing.rotation.x = Math.PI / 2;
+    sensorRing.position.y = 0.38;
 
-    // Upright digital readout screen
-    const pillar = new THREE.Mesh(
-      new THREE.BoxGeometry(0.35, 4.2, 0.35),
-      new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.7 })
+    const pillarLeft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.14, 0.18, 4.2, 12),
+      new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8 })
     );
-    pillar.position.set(0, 2.1, -1.6);
-    scaleGroup.add(pillar);
+    pillarLeft.position.set(-1.3, 2.1, -1.5);
+
+    const pillarRight = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.14, 0.18, 4.2, 12),
+      new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8 })
+    );
+    pillarRight.position.set(1.3, 2.1, -1.5);
 
     this.scaleCanvas = document.createElement('canvas');
     this.scaleCanvas.width = 512;
@@ -486,13 +661,31 @@ export class M01MassVaultController {
     this.scaleTexture.colorSpace = THREE.SRGBColorSpace;
     this.scaleTexture.anisotropy = this.maxAnisotropy;
 
+    const screenHousing = new THREE.Mesh(
+      new THREE.BoxGeometry(4.6, 2.4, 0.22),
+      new THREE.MeshStandardMaterial({
+        color: 0x0f172a,
+        metalness: 0.7,
+        roughness: 0.3,
+      })
+    );
+    screenHousing.position.set(0, 4.1, -1.5);
+
     const screenMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(4.4, 2.2),
       new THREE.MeshBasicMaterial({ map: this.scaleTexture })
     );
-    screenMesh.position.set(0, 4.1, -1.4);
-    scaleGroup.add(screenMesh);
+    screenMesh.position.set(0, 4.1, -1.37);
 
+    scaleGroup.add(
+      baseChassis,
+      loadCellPlate,
+      sensorRing,
+      pillarLeft,
+      pillarRight,
+      screenHousing,
+      screenMesh
+    );
     this.rootGroup.add(scaleGroup);
   }
 
@@ -534,21 +727,50 @@ export class M01MassVaultController {
   }
 
   private buildConveyorAndCargoCrates() {
-    // Moving Conveyor Belt at (x = 7.8, z = -4.5)
+    // Composite Multi-Part Moving Conveyor Belt at (x = 7.8, z = -4.5)
     const convGroup = new THREE.Group();
     convGroup.position.set(7.8, 0, -4.5);
     convGroup.rotation.y = -0.35;
+    this.addContactShadow(convGroup, 2.2, 5.2);
 
     const frame = new THREE.Mesh(
-      new THREE.BoxGeometry(3.2, 0.55, 9.6),
+      new THREE.BoxGeometry(3.1, 0.52, 9.6),
       new THREE.MeshStandardMaterial({
         color: 0x1e293b,
-        metalness: 0.75,
-        roughness: 0.3,
+        metalness: 0.78,
+        roughness: 0.28,
       })
     );
-    frame.position.y = 0.28;
+    frame.position.y = 0.26;
     convGroup.add(frame);
+
+    const railMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      metalness: 0.65,
+      roughness: 0.3,
+    });
+    [-1.58, 1.58].forEach((rx) => {
+      const sideRail = new THREE.Mesh(
+        new THREE.BoxGeometry(0.14, 0.28, 9.7),
+        railMat
+      );
+      sideRail.position.set(rx, 0.62, 0);
+      convGroup.add(sideRail);
+    });
+
+    const rollerGeo = new THREE.CylinderGeometry(0.18, 0.18, 2.9, 12);
+    rollerGeo.rotateZ(Math.PI / 2);
+    const rollerMat = new THREE.MeshStandardMaterial({
+      color: 0x64748b,
+      metalness: 0.85,
+      roughness: 0.2,
+    });
+    [-4.55, 0, 4.55].forEach((rz) => {
+      const roller = new THREE.Mesh(rollerGeo, rollerMat);
+      roller.position.set(0, 0.42, rz);
+      convGroup.add(roller);
+      this.conveyorRollers.push(roller);
+    });
 
     const slatGeo = new THREE.BoxGeometry(2.7, 0.08, 0.45);
     const slatMat = new THREE.MeshStandardMaterial({
@@ -565,14 +787,20 @@ export class M01MassVaultController {
 
     this.rootGroup.add(convGroup);
 
-    // 5 Interactive Cargo Crates arrayed in a semi-circle around the Scanner Bay
+    // 5 Composite 6-Part Interactive Cargo Crates arrayed around Scanner Bay
     const crateOffsets: [number, number, number][] = [
-      [-5.2, 0.95, -1.8], // CRATE_A1: m = 2500 g (2.5 kg)
-      [-2.6, 0.95, -0.5], // CRATE_B2: P = 50 N (Distractor)
-      [0.0, 0.95, -0.2], // CRATE_C3: m = 5.0 kg
-      [2.6, 0.95, -0.5], // CRATE_D4: V = 50 L (Distractor)
-      [5.2, 0.95, -1.8], // CRATE_E5: m = 0.75 yến (7.5 kg)
+      [-5.2, 0.95, -1.8],
+      [-2.6, 0.95, -0.5],
+      [0.0, 0.95, -0.2],
+      [2.6, 0.95, -0.5],
+      [5.2, 0.95, -1.8],
     ];
+
+    const bumperMat = new THREE.MeshStandardMaterial({
+      color: 0x334155,
+      metalness: 0.82,
+      roughness: 0.25,
+    });
 
     M01_CARGO_CRATE_SPECS.forEach((spec, idx) => {
       const [lx, ly, lz] = crateOffsets[idx] || [0, 0.95, -1];
@@ -582,20 +810,45 @@ export class M01MassVaultController {
       const labelTex = this.createCrateLabelTexture(spec);
       const bodyMat = new THREE.MeshStandardMaterial({
         map: labelTex,
-        roughness: 0.35,
-        metalness: 0.3,
+        roughness: 0.32,
+        metalness: 0.34,
       });
 
+      // Part 1: Main labeled core cube
       const bodyMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(1.55, 1.55, 1.55),
+        new THREE.BoxGeometry(1.52, 1.52, 1.52),
         bodyMat
       );
       bodyMesh.userData = { crateId: spec.id };
       crateGroup.add(bodyMesh);
       this.interactableMeshes.push(bodyMesh);
 
+      // Part 2 & 3: Top and bottom reinforced alloy frames
+      const topFrame = new THREE.Mesh(
+        new THREE.BoxGeometry(1.62, 0.14, 1.62),
+        bumperMat
+      );
+      topFrame.position.y = 0.74;
+      const bottomFrame = new THREE.Mesh(
+        new THREE.BoxGeometry(1.62, 0.14, 1.62),
+        bumperMat
+      );
+      bottomFrame.position.y = -0.74;
+
+      // Part 4: Top status transponder dome
+      const beaconLightMesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.24, 0.16, 12),
+        new THREE.MeshStandardMaterial({
+          color: spec.colorHex,
+          emissive: spec.colorHex,
+          emissiveIntensity: 0.65,
+        })
+      );
+      beaconLightMesh.position.y = 0.86;
+
+      // Part 5: Holographic target lock wireframe cage
       const outlineMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(1.68, 1.68, 1.68),
+        new THREE.BoxGeometry(1.72, 1.72, 1.72),
         new THREE.MeshBasicMaterial({
           color: 0x38bdf8,
           wireframe: true,
@@ -603,10 +856,10 @@ export class M01MassVaultController {
           opacity: 0.0,
         })
       );
-      crateGroup.add(outlineMesh);
 
+      // Part 6: Science Pulse floor tag ring
       const pulseRingMesh = new THREE.Mesh(
-        new THREE.RingGeometry(1.05, 1.35, 24),
+        new THREE.RingGeometry(1.05, 1.38, 24),
         new THREE.MeshBasicMaterial({
           color: spec.colorHex,
           side: THREE.DoubleSide,
@@ -615,19 +868,29 @@ export class M01MassVaultController {
         })
       );
       pulseRingMesh.rotation.x = -Math.PI / 2;
-      pulseRingMesh.position.y = -0.72;
-      crateGroup.add(pulseRingMesh);
+      pulseRingMesh.position.y = -0.76;
 
+      crateGroup.add(
+        topFrame,
+        bottomFrame,
+        beaconLightMesh,
+        outlineMesh,
+        pulseRingMesh
+      );
       this.rootGroup.add(crateGroup);
 
-      const worldPos = this.localToWorld(lx, ly, lz);
+      this.localToWorldInto(lx, ly, lz, _worldScratchA);
       const runtimeState: CargoCrateRuntimeState = {
         spec,
         scanned: false,
         taggedWithPulse: false,
         loadedOnConveyor: false,
         rejectedAttemptCount: 0,
-        worldPosition: { x: worldPos.x, y: worldPos.y, z: worldPos.z },
+        worldPosition: {
+          x: _worldScratchA.x,
+          y: _worldScratchA.y,
+          z: _worldScratchA.z,
+        },
       };
 
       this.crates.push({
@@ -637,8 +900,11 @@ export class M01MassVaultController {
         bodyMesh,
         outlineMesh,
         pulseRingMesh,
+        beaconLightMesh,
         basePosition: new THREE.Vector3(lx, ly, lz),
         conveyorSlotIndex: -1,
+        squashTimer: 0,
+        hitFlashTimer: 0,
       });
     });
   }
@@ -676,7 +942,7 @@ export class M01MassVaultController {
   }
 
   private buildShortcutAndExitGates() {
-    // Shortcut Maintenance Gate on Left Lane (x = -6.8, z = -11.5) + Bonus Holo-Crate
+    // Shortcut Maintenance Gate on Left Lane (x = -6.8, z = -11.5)
     const shortcutGroup = new THREE.Group();
     shortcutGroup.position.set(-6.8, 0, -11.5);
 
@@ -684,22 +950,32 @@ export class M01MassVaultController {
       color: 0xa855f7,
       emissive: 0x6b21a8,
       emissiveIntensity: 0.45,
-      metalness: 0.6,
-      roughness: 0.3,
+      metalness: 0.65,
+      roughness: 0.28,
     });
-    this.shortcutGateLeft = new THREE.Mesh(
-      new THREE.BoxGeometry(1.4, 2.8, 0.25),
-      gateMat
-    );
+    const trimMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      metalness: 0.85,
+      roughness: 0.22,
+    });
+
+    this.shortcutGateLeft = new THREE.Group();
     this.shortcutGateLeft.position.set(-0.75, 1.4, 0);
-    this.shortcutGateRight = new THREE.Mesh(
-      new THREE.BoxGeometry(1.4, 2.8, 0.25),
-      gateMat
+    this.shortcutGateLeft.add(
+      new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.8, 0.25), gateMat),
+      new THREE.Mesh(new THREE.BoxGeometry(1.46, 0.35, 0.32), trimMat)
     );
+
+    this.shortcutGateRight = new THREE.Group();
     this.shortcutGateRight.position.set(0.75, 1.4, 0);
+    this.shortcutGateRight.add(
+      new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.8, 0.25), gateMat),
+      new THREE.Mesh(new THREE.BoxGeometry(1.46, 0.35, 0.32), trimMat)
+    );
+
     shortcutGroup.add(this.shortcutGateLeft, this.shortcutGateRight);
 
-    // Bonus Holo-Crate behind Shortcut Gate
+    // Bonus Composite Holo-Crate behind Shortcut Gate
     this.holoCrateMesh = new THREE.Group();
     this.holoCrateMesh.position.set(-6.8, 1.1, -8.2);
     const holoCore = new THREE.Mesh(
@@ -708,49 +984,103 @@ export class M01MassVaultController {
         color: 0x2dd4bf,
         emissive: 0x0d9488,
         emissiveIntensity: 0.85,
-        wireframe: false,
+        metalness: 0.4,
+        roughness: 0.15,
       })
     );
-    const holoRing = new THREE.Mesh(
-      new THREE.TorusGeometry(0.9, 0.08, 12, 24),
+    const holoRingA = new THREE.Mesh(
+      new THREE.TorusGeometry(0.92, 0.08, 12, 24),
       new THREE.MeshBasicMaterial({ color: 0xfbbf24 })
     );
-    this.holoCrateMesh.add(holoCore, holoRing);
+    const holoRingB = new THREE.Mesh(
+      new THREE.TorusGeometry(0.78, 0.06, 10, 24),
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+    );
+    holoRingB.rotation.x = Math.PI / 2;
+    this.holoCrateMesh.add(holoCore, holoRingA, holoRingB);
     this.rootGroup.add(shortcutGroup, this.holoCrateMesh);
 
-    // Main Sliding Exit Gate across Station 1 Trigger (x = 0, z = +2.4)
+    // Composite 6-Part Sliding Exit Gate across Station 1 Trigger (x = 0, z = +2.4)
     const exitGroup = new THREE.Group();
     exitGroup.position.set(0, 0, 2.4);
 
     const exitDoorMat = new THREE.MeshStandardMaterial({
       color: 0x334155,
       emissive: 0xbe123c,
-      emissiveIntensity: 0.35,
-      metalness: 0.75,
-      roughness: 0.28,
+      emissiveIntensity: 0.3,
+      metalness: 0.78,
+      roughness: 0.26,
+      bumpMap: this.bumpTex,
+      bumpScale: 0.015,
     });
 
-    this.exitGateLeft = new THREE.Mesh(
-      new THREE.BoxGeometry(4.2, 4.2, 0.45),
-      exitDoorMat
-    );
+    this.exitGateLeft = new THREE.Group();
     this.exitGateLeft.position.set(-2.15, 2.1, 0);
-
-    this.exitGateRight = new THREE.Mesh(
-      new THREE.BoxGeometry(4.2, 4.2, 0.45),
-      exitDoorMat
+    this.exitGateLeft.add(
+      new THREE.Mesh(new THREE.BoxGeometry(4.2, 4.2, 0.42), exitDoorMat),
+      new THREE.Mesh(new THREE.BoxGeometry(4.26, 0.45, 0.52), trimMat)
     );
-    this.exitGateRight.position.set(2.15, 2.1, 0);
 
-    this.exitBeaconMat = new THREE.MeshBasicMaterial({ color: 0xf43f5e });
+    this.exitGateRight = new THREE.Group();
+    this.exitGateRight.position.set(2.15, 2.1, 0);
+    this.exitGateRight.add(
+      new THREE.Mesh(new THREE.BoxGeometry(4.2, 4.2, 0.42), exitDoorMat),
+      new THREE.Mesh(new THREE.BoxGeometry(4.26, 0.45, 0.52), trimMat)
+    );
+
+    this.exitBeaconMat = new THREE.MeshStandardMaterial({
+      color: 0xf43f5e,
+      emissive: 0xe11d48,
+      emissiveIntensity: 0.85,
+    });
     const exitHeader = new THREE.Mesh(
-      new THREE.BoxGeometry(9.2, 0.55, 0.65),
+      new THREE.BoxGeometry(9.2, 0.58, 0.68),
       this.exitBeaconMat
     );
-    exitHeader.position.set(0, 4.45, 0);
+    exitHeader.position.set(0, 4.48, 0);
 
     exitGroup.add(this.exitGateLeft, this.exitGateRight, exitHeader);
     this.rootGroup.add(exitGroup);
+  }
+
+  private buildPooledPulseBursts() {
+    for (let i = 0; i < 6; i++) {
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.45, 0.75, 28),
+        new THREE.MeshBasicMaterial({
+          color: 0x38bdf8,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0,
+        })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.visible = false;
+      this.rootGroup.add(ring);
+      this.pulseBursts.push({
+        mesh: ring,
+        active: false,
+        age: 0,
+        maxAge: 0.55,
+      });
+    }
+  }
+
+  private spawnPooledBurstAtCrate(node: CrateMeshNode, colorHex: number) {
+    const burst = this.pulseBursts.find((b) => !b.active) || this.pulseBursts[0];
+    if (!burst) return;
+    burst.active = true;
+    burst.age = 0;
+    burst.mesh.visible = true;
+    burst.mesh.position.set(
+      node.group.position.x,
+      0.22,
+      node.group.position.z
+    );
+    burst.mesh.scale.setScalar(1);
+    const mat = burst.mesh.material as THREE.MeshBasicMaterial;
+    mat.color.setHex(colorHex);
+    mat.opacity = 0.95;
   }
 
   public update(
@@ -770,7 +1100,6 @@ export class M01MassVaultController {
     this.rootGroup.visible = isActiveStationZero;
     if (!isActiveStationZero) return;
 
-    // Track FPS smoothly
     if (dt > 0.001) {
       const instFps = Math.min(120, Math.round(1 / dt));
       this.currentFps = Math.round(this.currentFps * 0.9 + instFps * 0.1);
@@ -783,7 +1112,6 @@ export class M01MassVaultController {
       this.collisionPenaltyCooldown -= dt;
     }
 
-    // Countdown mission timer while active
     if (!this.exitGateOpen && this.remainingTimeSeconds > 0) {
       this.remainingTimeSeconds = Math.max(0, this.remainingTimeSeconds - dt);
       if (this.remainingTimeSeconds <= 0) {
@@ -794,9 +1122,12 @@ export class M01MassVaultController {
     }
 
     // 1. Animate Overhead Crane Hazards & Check Collision in Sorting Lanes
-    this.craneHazards.forEach((haz) => {
+    const damp10 = 1 - Math.exp(-10 * dt);
+    const damp5 = 1 - Math.exp(-5 * dt);
+
+    for (let i = 0; i < this.craneHazards.length; i++) {
+      const haz = this.craneHazards[i];
       const cycle = (elapsed + haz.cycleOffset) % 6.0;
-      // 0..2.5s: high up; 2.5..4.5s: 2-second Amber Telegraph Warning; 4.5..6.0s: lowered hazard
       const isTelegraph = cycle >= 2.5 && cycle < 4.5;
       const isDown = cycle >= 4.5;
       haz.isDangerDown = isDown;
@@ -805,37 +1136,37 @@ export class M01MassVaultController {
       if (isTelegraph) {
         ringMat.color.setHex(0xf59e0b);
         ringMat.opacity = 0.45 + Math.sin(elapsed * 16) * 0.35;
-        const targetY = 5.5 - ((cycle - 2.5) / 2.0) * 1.5;
-        haz.containerMesh.position.y = targetY;
+        haz.carriageGroup.position.y = 5.5 - ((cycle - 2.5) / 2.0) * 1.5;
 
         if (!haz.warnedThisCycle) {
           haz.warnedThisCycle = true;
-          const worldHaz = this.localToWorld(
+          this.localToWorldInto(
             haz.centerPos.x,
             0,
-            haz.centerPos.z
+            haz.centerPos.z,
+            _worldScratchA
           );
-          if (roverPos.distanceTo(worldHaz) < 16) {
+          if (roverPos.distanceTo(_worldScratchA) < 16) {
             soundEngine.playTelegraphWarning();
           }
         }
       } else if (isDown) {
         ringMat.color.setHex(0xf43f5e);
         ringMat.opacity = 0.85;
-        haz.containerMesh.position.y = THREE.MathUtils.lerp(
-          haz.containerMesh.position.y,
+        haz.carriageGroup.position.y = THREE.MathUtils.lerp(
+          haz.carriageGroup.position.y,
           1.15,
-          dt * 10
+          damp10
         );
 
-        // Check rover collision with lowered container
-        const worldHaz = this.localToWorld(
+        this.localToWorldInto(
           haz.centerPos.x,
           0,
-          haz.centerPos.z
+          haz.centerPos.z,
+          _worldScratchA
         );
         if (
-          roverPos.distanceTo(worldHaz) < 2.25 &&
+          roverPos.distanceTo(_worldScratchA) < 2.25 &&
           this.collisionPenaltyCooldown <= 0
         ) {
           this.collisionPenaltyCooldown = 2.0;
@@ -845,45 +1176,51 @@ export class M01MassVaultController {
             this.evidence.drivingScore - 5
           );
           onDrivingPenalty(5);
+          this.pendingImpactCallback?.(0.055, 0.42);
           soundEngine.playOffLaneWarning();
           this.orbitSpeaker = 'ORBIT';
           this.feedbackTone = 'warning';
           this.orbitMessageVi =
-            'Cảnh báo va chạm kiện hàng cẩu (-5 điểm lái)! Hãy quan sát vòng cảnh báo màu cam 2 giây trên sàn.';
+            'Va chạm thùng cẩu (-5 điểm lái)! Hãy quan sát vòng cảnh báo màu cam 2 giây trên sàn.';
         }
       } else {
         haz.warnedThisCycle = false;
         ringMat.color.setHex(0x38bdf8);
         ringMat.opacity = 0.18;
-        haz.containerMesh.position.y = THREE.MathUtils.lerp(
-          haz.containerMesh.position.y,
+        haz.carriageGroup.position.y = THREE.MathUtils.lerp(
+          haz.carriageGroup.position.y,
           5.5,
-          dt * 5
+          damp5
         );
       }
-    });
+    }
 
-    // 2. Animate Moving Conveyor Belt & Green Load Window
+    // 2. Animate Moving Conveyor Belt & Rollers
     this.conveyorCycleProgress = (elapsed * 0.28) % 1;
-    // Conveyor window is open 85% of the cycle (Rookie/Pro friendly)
     this.conveyorWindowOpen =
       this.difficulty === 'ROOKIE' ? true : this.conveyorCycleProgress < 0.82;
 
-    this.conveyorSlats.forEach((slat, idx) => {
-      const offset = ((elapsed * 2.2 + idx * 0.9) % 9.0) - 4.5;
-      slat.position.z = offset;
+    for (let i = 0; i < this.conveyorSlats.length; i++) {
+      const slat = this.conveyorSlats[i];
+      slat.position.z = ((elapsed * 2.2 + i * 0.9) % 9.0) - 4.5;
       const mat = slat.material as THREE.MeshStandardMaterial;
       mat.color.setHex(this.conveyorWindowOpen ? 0x10b981 : 0xf59e0b);
-    });
+    }
+    for (let i = 0; i < this.conveyorRollers.length; i++) {
+      this.conveyorRollers[i].rotation.x = elapsed * 4.0;
+    }
 
     // 3. Check Rover proximity to Sorting Lanes & Scanner Bay (CP1)
-    const scannerBayWorld = this.localToWorld(0, 0, -8.5);
+    this.localToWorldInto(0, 0, -8.5, _worldScratchA);
     const distToScannerBay = Math.hypot(
-      roverPos.x - scannerBayWorld.x,
-      roverPos.z - scannerBayWorld.z
+      roverPos.x - _worldScratchA.x,
+      roverPos.z - _worldScratchA.z
     );
 
-    if (distToScannerBay < 26 && !this.evidence.objectiveFlags.reachedSortingLanes) {
+    if (
+      distToScannerBay < 26 &&
+      !this.evidence.objectiveFlags.reachedSortingLanes
+    ) {
       this.evidence.objectiveFlags.reachedSortingLanes = true;
       if (!this.evidence.routeChoices.includes('SORTING_LANES_ABC')) {
         this.evidence.routeChoices.push('SORTING_LANES_ABC');
@@ -906,20 +1243,28 @@ export class M01MassVaultController {
         this.orbitSpeaker = 'Dr. Linh';
         this.feedbackTone = 'info';
         this.orbitMessageVi =
-          'JetBot đã vào Khoang Quét Cân Điện Tử! Nhấn phím C (hoặc nút Góc Nhìn FPS), rê tâm ngắm vào từng kiện hàng, nhấn F/Chuột để phát xung Science Pulse và nhấn E để nạp kiện hàng Khối lượng (m) lên băng chuyền.';
+          'Đã vào Khoang Quét Cân Điện Tử! Nhấn phím C (hoặc nút Camera), rê tâm ngắm vào kiện hàng, nhấn F phát xung Science Pulse và nhấn E nạp kiện hàng Khối lượng (m) lên băng chuyền.';
         soundEngine.playTargetLock();
       }
     }
 
-    // 4. Check Bonus Holo-Crate pickup if Shortcut Gate is unlocked
-    if (this.shortcutUnlocked && !this.holoCrateCollected && this.holoCrateMesh) {
+    // 4. Check Bonus Holo-Crate pickup
+    if (
+      this.shortcutUnlocked &&
+      !this.holoCrateCollected &&
+      this.holoCrateMesh
+    ) {
       this.holoCrateMesh.rotation.y = elapsed * 2.6;
-      const holoWorld = this.localToWorld(-6.8, 0, -8.2);
-      if (Math.hypot(roverPos.x - holoWorld.x, roverPos.z - holoWorld.z) < 4.5) {
+      this.localToWorldInto(-6.8, 0, -8.2, _worldScratchB);
+      if (
+        Math.hypot(roverPos.x - _worldScratchB.x, roverPos.z - _worldScratchB.z) <
+        4.5
+      ) {
         this.holoCrateCollected = true;
         this.holoCrateMesh.visible = false;
         this.evidence.objectiveFlags.collectedHoloCrate = true;
         this.evidence.collectedIds.push('M01_HOLO_CRATE_01');
+        this.pendingImpactCallback?.(0.035, 0.2);
         onBonusCoinsAwarded(
           50,
           '🌟 Mở Cổng Tắt Bảo Trì & Thu thập Holo-Crate M01: +50 Xu Khoa Học!'
@@ -927,10 +1272,26 @@ export class M01MassVaultController {
       }
     }
 
-    // 5. Raycast + Aim Assist for Cargo Crates
+    // 5. Update Pooled Pulse Bursts
+    for (let i = 0; i < this.pulseBursts.length; i++) {
+      const b = this.pulseBursts[i];
+      if (!b.active) continue;
+      b.age += dt;
+      if (b.age >= b.maxAge) {
+        b.active = false;
+        b.mesh.visible = false;
+      } else {
+        const ratio = b.age / b.maxAge;
+        b.mesh.scale.setScalar(1 + ratio * 3.8);
+        (b.mesh.material as THREE.MeshBasicMaterial).opacity =
+          (1 - ratio) * 0.9;
+      }
+    }
+
+    // 6. Raycast + Aim Assist + Squash & Stretch for Cargo Crates
     this.updateCrateAimingAndVisuals(dt, elapsed, camera);
 
-    // 6. Handle Science Pulse (F / Button) and Cargo Load Interaction (E / Button)
+    // 7. Handle Science Pulse & Cargo Load Interaction
     if (justPressedPulse) {
       this.triggerSciencePulseOnAimed();
     }
@@ -938,19 +1299,19 @@ export class M01MassVaultController {
       this.interactWithAimedCrate(onBonusCoinsAwarded);
     }
 
-    // 7. Animate Shortcut Gate & Main Exit Gate doors
+    // 8. Animate Shortcut Gate & Main Exit Gate doors with exponential damping
     if (this.shortcutGateLeft && this.shortcutGateRight) {
       const targetLeftX = this.shortcutUnlocked ? -2.3 : -0.75;
       const targetRightX = this.shortcutUnlocked ? 2.3 : 0.75;
       this.shortcutGateLeft.position.x = THREE.MathUtils.lerp(
         this.shortcutGateLeft.position.x,
         targetLeftX,
-        dt * 5
+        damp5
       );
       this.shortcutGateRight.position.x = THREE.MathUtils.lerp(
         this.shortcutGateRight.position.x,
         targetRightX,
-        dt * 5
+        damp5
       );
     }
 
@@ -960,12 +1321,12 @@ export class M01MassVaultController {
       this.exitGateLeft.position.x = THREE.MathUtils.lerp(
         this.exitGateLeft.position.x,
         targetLeftX,
-        dt * 4.5
+        damp5
       );
       this.exitGateRight.position.x = THREE.MathUtils.lerp(
         this.exitGateRight.position.x,
         targetRightX,
-        dt * 4.5
+        damp5
       );
     }
 
@@ -986,10 +1347,13 @@ export class M01MassVaultController {
       newAimedId = hits[0].object.userData?.crateId || null;
     }
 
-    // Aim Assist in screen space if no direct raycast hit
-    if (!newAimedId && (this.inScannerZone || this.cameraMode === 'fps_scanner')) {
+    if (
+      !newAimedId &&
+      (this.inScannerZone || this.cameraMode === 'fps_scanner')
+    ) {
       let bestScreenDist = 0.34;
-      for (const node of this.crates) {
+      for (let i = 0; i < this.crates.length; i++) {
+        const node = this.crates[i];
         if (node.state.loadedOnConveyor) continue;
         node.bodyMesh.getWorldPosition(_projVec);
         _projVec.project(camera);
@@ -1016,17 +1380,39 @@ export class M01MassVaultController {
       this.aimedCrateId = null;
     }
 
-    // Update crate transforms and highlight outlines
-    this.crates.forEach((node, idx) => {
+    const damp6 = 1 - Math.exp(-6.5 * dt);
+
+    for (let idx = 0; idx < this.crates.length; idx++) {
+      const node = this.crates[idx];
       const isAimed = node.spec.id === this.aimedCrateId;
       const outMat = node.outlineMesh.material as THREE.MeshBasicMaterial;
       const pulseMat = node.pulseRingMesh.material as THREE.MeshBasicMaterial;
+      const bodyMat = node.bodyMesh.material as THREE.MeshStandardMaterial;
+
+      // Hit flash decay
+      if (node.hitFlashTimer > 0) {
+        node.hitFlashTimer = Math.max(0, node.hitFlashTimer - dt);
+        bodyMat.emissive.setHex(
+          node.spec.isValidMassTarget ? 0x10b981 : 0xf43f5e
+        );
+        bodyMat.emissiveIntensity = node.hitFlashTimer * 2.5;
+      } else {
+        bodyMat.emissiveIntensity = 0;
+      }
+
+      // Squash & stretch decay
+      if (node.squashTimer > 0) {
+        node.squashTimer = Math.max(0, node.squashTimer - dt);
+        const s = Math.sin(node.squashTimer * 28) * 0.16;
+        node.group.scale.set(1 + s, 1 - s * 0.8, 1 + s);
+      } else {
+        node.group.scale.setScalar(1);
+      }
 
       if (node.state.loadedOnConveyor) {
-        // Position loaded crate on the moving conveyor belt
         const slotZ = -2.2 + node.conveyorSlotIndex * 2.1;
-        const targetPos = new THREE.Vector3(7.8, 1.35, -4.5 + slotZ);
-        node.group.position.lerp(targetPos, dt * 6.5);
+        _targetLerpVec.set(7.8, 1.35, -4.5 + slotZ);
+        node.group.position.lerp(_targetLerpVec, damp6);
         node.group.rotation.y = elapsed * 0.8 + idx;
         outMat.opacity = 0.35;
         outMat.color.setHex(0x10b981);
@@ -1034,12 +1420,12 @@ export class M01MassVaultController {
         node.group.position.x = THREE.MathUtils.lerp(
           node.group.position.x,
           node.basePosition.x,
-          dt * 6
+          damp6
         );
         node.group.position.z = THREE.MathUtils.lerp(
           node.group.position.z,
           node.basePosition.z,
-          dt * 6
+          damp6
         );
         node.group.position.y =
           node.basePosition.y + Math.sin(elapsed * 2.4 + idx) * 0.08;
@@ -1063,24 +1449,30 @@ export class M01MassVaultController {
         pulseMat.opacity = 0;
       }
 
-      // Sync world coordinates for HUD
-      const wp = new THREE.Vector3();
-      node.group.getWorldPosition(wp);
-      node.state.worldPosition = { x: wp.x, y: wp.y, z: wp.z };
-    });
+      node.group.getWorldPosition(_worldScratchA);
+      node.state.worldPosition.x = _worldScratchA.x;
+      node.state.worldPosition.y = _worldScratchA.y;
+      node.state.worldPosition.z = _worldScratchA.z;
+    }
   }
 
   private markCrateScanned(node: CrateMeshNode) {
     soundEngine.playScanSweep();
+    node.squashTimer = 0.22;
+    this.spawnPooledBurstAtCrate(node, 0x38bdf8);
+
     if (!node.state.scanned) {
       node.state.scanned = true;
       this.evidence.scanCount += 1;
-      if (!this.evidence.interactionEvidence.scannedCrateIds.includes(node.spec.id)) {
+      if (
+        !this.evidence.interactionEvidence.scannedCrateIds.includes(
+          node.spec.id
+        )
+      ) {
         this.evidence.interactionEvidence.scannedCrateIds.push(node.spec.id);
       }
     }
 
-    // Update Electronic Balance 3D Screen with live crate reading
     this.updateScaleDisplay(
       `QUÉT NHÃN: ${node.spec.code}`,
       node.spec.electronicScaleReadoutVi,
@@ -1094,11 +1486,11 @@ export class M01MassVaultController {
       this.evidence.objectiveFlags.scannedThreeTargetCrates = true;
     }
 
-    // Unlock Shortcut Maintenance Gate when all 5 labels are scanned
     const totalScanned = this.crates.filter((c) => c.state.scanned).length;
     if (totalScanned >= 5 && !this.shortcutUnlocked) {
       this.shortcutUnlocked = true;
       this.evidence.objectiveFlags.unlockedShortcutGate = true;
+      this.pendingImpactCallback?.(0.04, 0.22);
       soundEngine.playRewardUnlock();
       this.orbitSpeaker = 'ORBIT';
       this.feedbackTone = 'success';
@@ -1118,6 +1510,9 @@ export class M01MassVaultController {
 
     this.markCrateScanned(targetNode);
     targetNode.state.taggedWithPulse = true;
+    targetNode.hitFlashTimer = 0.35;
+    targetNode.squashTimer = 0.28;
+    this.spawnPooledBurstAtCrate(targetNode, targetNode.spec.colorHex);
     this.evidence.pulseTagCount += 1;
     this.evidence.interactionCount += 1;
     soundEngine.playSciencePulse();
@@ -1132,7 +1527,6 @@ export class M01MassVaultController {
   ) {
     let targetNode = this.crates.find((c) => c.spec.id === this.aimedCrateId);
     if (!targetNode) {
-      // Fallback to first unloaded valid crate if player presses E without aiming
       targetNode = this.crates.find(
         (c) => !c.state.loadedOnConveyor && c.spec.isValidMassTarget
       );
@@ -1159,10 +1553,14 @@ export class M01MassVaultController {
       return;
     }
 
-    // Check if crate is a valid Mass crate (m in kg/g/yến) vs Distractor (Weight P in N or Volume V in L)
     if (targetNode.spec.isValidMassTarget && targetNode.spec.massKg !== null) {
       targetNode.state.loadedOnConveyor = true;
       targetNode.conveyorSlotIndex = this.loadedCratesCount;
+      targetNode.hitFlashTimer = 0.45;
+      targetNode.squashTimer = 0.35;
+      this.spawnPooledBurstAtCrate(targetNode, 0x10b981);
+      this.pendingImpactCallback?.(0.045, 0.25);
+
       this.loadedCratesCount += 1;
       this.loadedMassKg = Number(
         (this.loadedMassKg + targetNode.spec.massKg).toFixed(2)
@@ -1208,7 +1606,9 @@ export class M01MassVaultController {
 
         if (this.exitBeaconMat) {
           this.exitBeaconMat.color.setHex(0x10b981);
+          this.exitBeaconMat.emissive.setHex(0x059669);
         }
+        this.pendingImpactCallback?.(0.065, 0.38);
         soundEngine.playGateUnlock();
         onBonusCoinsAwarded?.(
           45,
@@ -1227,8 +1627,12 @@ export class M01MassVaultController {
         this.orbitMessageVi = `Nạp thành công ${targetNode.spec.code} (${targetNode.spec.electronicScaleReadoutVi})! Tổng khối lượng hiện tại: ${this.loadedMassKg.toFixed(1)} / 15,0 kg (${this.loadedCratesCount}/3 kiện).`;
       }
     } else {
-      // Scientific Distractor rejected!
       targetNode.state.rejectedAttemptCount += 1;
+      targetNode.hitFlashTimer = 0.5;
+      targetNode.squashTimer = 0.35;
+      this.spawnPooledBurstAtCrate(targetNode, 0xf43f5e);
+      this.pendingImpactCallback?.(0.05, 0.32);
+
       this.wrongAttempts += 1;
       this.evidence.wrongCrateAttempts += 1;
       if (
@@ -1254,7 +1658,6 @@ export class M01MassVaultController {
         'Sai đại lượng! Chỉ nạp kiện hàng Khối lượng (m)'
       );
 
-      // Tiered Pedagogical Hint System (Level 1 -> Level 2 -> Level 3)
       if (this.wrongAttempts === 1) {
         this.tieredHintVi =
           'Gợi ý Bậc 1 (Khái niệm): Khối lượng (ký hiệu m) chỉ lượng chất chứa trong vật. Đừng nhầm với Trọng lượng P (Newton) hoặc Thể tích V (Lít)!';
@@ -1301,7 +1704,7 @@ export class M01MassVaultController {
     let score = 40;
     if (this.evidence.objectiveFlags.reachedSortingLanes) score += 10;
     if (this.evidence.objectiveFlags.enteredScannerBay) score += 10;
-    score += this.loadedCratesCount * 10; // up to +30 for 3 valid crates
+    score += this.loadedCratesCount * 10;
     if (this.evidence.objectiveFlags.unlockedShortcutGate) score += 5;
     if (this.evidence.objectiveFlags.collectedHoloCrate) score += 5;
     if (this.evidence.objectiveFlags.noCollisionBonus) score += 5;
@@ -1364,5 +1767,13 @@ export class M01MassVaultController {
 
   public dispose() {
     this.clearVault();
+    if (this.shadowTex) {
+      this.shadowTex.dispose();
+      this.shadowTex = null;
+    }
+    if (this.bumpTex) {
+      this.bumpTex.dispose();
+      this.bumpTex = null;
+    }
   }
 }

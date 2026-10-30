@@ -82,6 +82,23 @@ export const SetupWizardOverlay: React.FC<SetupWizardOverlayProps> = ({
     (s) => s.completed
   ).length;
 
+  React.useEffect(() => {
+    if (phase !== 'menu') return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Enter' || e.code === 'Space') {
+        e.preventDefault();
+        onUpdateMapConfig({
+          mapConstructed: true,
+          stationsPlaced: true,
+          jetbotReady: true,
+        });
+        onStartMission();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [phase, onUpdateMapConfig, onStartMission]);
+
   // Step indicator bar at top
   const renderStepPipelineBar = () => {
     const steps: { id: GameStatePhase; num: string; label: string; done: boolean }[] = [

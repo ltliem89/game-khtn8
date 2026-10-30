@@ -64,8 +64,8 @@ export const StationResultModal: React.FC<StationResultModalProps> = ({
       : null;
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto">
-      <div className="w-full max-w-2xl rounded-2xl bg-slate-900/95 border border-slate-700/80 shadow-2xl overflow-hidden text-slate-100 my-auto">
+    <div className="fixed inset-0 z-30 flex items-center justify-center p-4 bg-[#070c17]/92 overflow-y-auto">
+      <div className="w-full max-w-2xl rounded-2xl bg-[#0b1322] border border-slate-700/80 shadow-2xl overflow-hidden text-slate-100 my-auto">
         {/* Header Banner */}
         <div
           className={`px-6 py-5 border-b flex items-center justify-between ${
